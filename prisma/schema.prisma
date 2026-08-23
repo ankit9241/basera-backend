@@ -1,0 +1,331 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  STUDENT
+  ADMIN
+}
+
+enum PropertyType {
+  PG
+  FLAT
+  CO_LIVING
+}
+
+enum GenderCategory {
+  GIRLS
+  BOYS
+  CO_ED
+}
+
+enum SharingType {
+  SINGLE
+  DOUBLE
+  TRIPLE
+  FOUR_PLUS
+}
+
+enum PropertyLifecycle {
+  DRAFT
+  PENDING_REVIEW
+  VERIFIED
+  PUBLISHED
+  PAUSED
+  ARCHIVED
+}
+
+enum VisitStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id                  String         @id @default(uuid())
+  phone               String         @unique
+  fullName            String
+  personalEmail       String?
+  collegeEmail        String?        @unique
+  isCollegeVerified   Boolean        @default(false)
+  collegeVerifiedAt   DateTime?
+  collegeId           String?
+  college             College?       @relation(fields: [collegeId], references: [id])
+  role                UserRole       @default(STUDENT)
+  avatarUrl           String?
+  budgetRange         String?
+  gender              String?
+  preferredLocations  String[]       @default([])
+  notifyVisits        Boolean        @default(true)
+  notifyMatches       Boolean        @default(true)
+  notifyOffers        Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  visits              VisitBooking[]
+  savedListings       SavedListing[]
+  reviews             PropertyReview[]
+  verificationTokens  EmailVerificationToken[]
+
+  @@index([phone])
+  @@index([collegeEmail])
+}
+
+model AdminUser {
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  passwordHash        String
+  fullName            String
+  phone               String?
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  permissions         AdminUserPermission[]
+  assignedVisits      VisitBooking[]       @relation("CoordinatorVisits")
+  verifiedProperties  Property[]           @relation("AdminVerifiedProperties")
+
+  @@index([email])
+}
+
+model AdminPermission {
+  id                  String               @id
+  category            String
+  description         String
+  createdAt           DateTime             @default(now())
+
+  users               AdminUserPermission[]
+}
+
+model AdminUserPermission {
+  adminId             String
+  admin               AdminUser            @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  permissionId        String
+  permission          AdminPermission      @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([adminId, permissionId])
+}
+
+model College {
+  id                  String               @id
+  name                String               @unique
+  shortCode           String
+  campusZone          String
+  area                String
+  description         String
+  imageUrl            String?
+  latitude            Float?
+  longitude           Float?
+  createdAt           DateTime             @default(now())
+
+  students            User[]
+  approvedDomains     CollegeEmailDomain[]
+  nearbyProperties    PropertyCollegeDistance[]
+}
+
+model CollegeEmailDomain {
+  id                  String               @id @default(uuid())
+  collegeId           String
+  college             College              @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  domain              String               @unique
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+
+  @@index([domain])
+}
+
+model Property {
+  id                  String                    @id @default(uuid())
+  propertyCode        String                    @unique
+  slug                String                    @unique
+  publicName          String
+  type                PropertyType
+  gender              GenderCategory
+  localityZone        String
+  
+  rentMin             Int
+  rentMax             Int
+  depositAmount       Int
+  distanceMin         Int
+  distanceText        String
+  description         String                    @db.Text
+  rules               String[]                  @default([])
+  foodPolicy          String?                   @db.Text
+  securityDetails     String?                   @db.Text
+  amenities           String[]                  @default([])
+  isFeatured          Boolean                   @default(false)
+  rating              Float                     @default(4.8)
+  reviewCount         Int                       @default(0)
+
+  isVerified          Boolean                   @default(false)
+  verifiedAt          DateTime?
+  verifiedById        String?
+  verifiedBy          AdminUser?                @relation("AdminVerifiedProperties", fields: [verifiedById], references: [id])
+  verificationChecklist Json?
+
+  lifecycleStatus     PropertyLifecycle         @default(DRAFT)
+
+  internalPropertyName String?
+  exactAddress        String
+  latitude            Float?
+  longitude           Float?
+  ownerName           String?
+  ownerPhone          String?
+  ownerAlternatePhone String?
+  internalSource      String?
+  internalAdminNotes  String?                   @db.Text
+  
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  rooms               RoomInventory[]
+  media               PropertyMedia[]
+  reviews             PropertyReview[]
+  savedIn             SavedListing[]
+  visits              VisitBooking[]
+  collegeDistances    PropertyCollegeDistance[]
+
+  @@index([localityZone])
+  @@index([type])
+  @@index([gender])
+  @@index([lifecycleStatus])
+  @@index([propertyCode])
+}
+
+model RoomInventory {
+  id                  String               @id @default(uuid())
+  propertyId          String
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  label               String
+  sharingType         SharingType
+  occupancyText       String
+  rent                Int
+  deposit             Int
+  totalUnits          Int                  @default(1)
+  availableUnits      Int                  @default(1)
+  createdAt           DateTime             @default(now())
+
+  @@index([propertyId])
+}
+
+model PropertyMedia {
+  id                  String               @id @default(uuid())
+  propertyId          String
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  mediaUrl            String
+  mediaType           String               @default("image")
+  displayOrder        Int                  @default(0)
+  isPrimary           Boolean              @default(false)
+  createdAt           DateTime             @default(now())
+
+  @@index([propertyId])
+}
+
+model PropertyCollegeDistance {
+  id                  String               @id @default(uuid())
+  propertyId          String
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  collegeId           String
+  college             College              @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  distanceMinutes     Int
+  walkingDistanceM    Int?
+
+  @@unique([propertyId, collegeId])
+}
+
+model PropertyReview {
+  id                  String               @id @default(uuid())
+  propertyId          String
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating              Int
+  comment             String               @db.Text
+  isVerifiedStudent   Boolean              @default(false)
+  createdAt           DateTime             @default(now())
+
+  @@index([propertyId])
+}
+
+model SavedListing {
+  id                  String               @id @default(uuid())
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  propertyId          String
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt           DateTime             @default(now())
+
+  @@unique([userId, propertyId])
+  @@index([userId])
+}
+
+model VisitBooking {
+  id                  String               @id @default(uuid())
+  bookingCode         String               @unique
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  propertyId          String
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  visitDate           DateTime
+  timeSlot            String
+  visitorCount        Int                  @default(1)
+  studentName         String
+  studentPhone        String
+  notes               String?              @db.Text
+  status              VisitStatus          @default(PENDING)
+  cancellationReason  String?
+  coordinatorId       String?
+  coordinator         AdminUser?           @relation("CoordinatorVisits", fields: [coordinatorId], references: [id])
+  coordinatorNotes    String?              @db.Text
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([userId])
+  @@index([propertyId])
+  @@index([status])
+  @@index([visitDate])
+}
+
+model PhoneOtpSession {
+  id                  String               @id @default(uuid())
+  phone               String
+  otpHash             String
+  attempts            Int                  @default(0)
+  expiresAt           DateTime
+  verified            Boolean              @default(false)
+  createdAt           DateTime             @default(now())
+
+  @@index([phone])
+}
+
+model EmailVerificationToken {
+  id                  String               @id @default(uuid())
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email               String
+  tokenHash           String               @unique
+  expiresAt           DateTime
+  createdAt           DateTime             @default(now())
+
+  @@index([tokenHash])
+  @@index([userId])
+}
+
+model AuditLog {
+  id                  String               @id @default(uuid())
+  actorId             String
+  actorType           String               @default("ADMIN")
+  action              String
+  targetEntity        String
+  targetId            String
+  details             Json?
+  createdAt           DateTime             @default(now())
+}
+
