@@ -17,16 +17,6 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  })
-);
-app.use(morgan("dev"));
-app.use(express.json({ limit: "15mb" }));
-app.use(express.urlencoded({ extended: true, limit: "15mb" }));
-app.use(cookieParser());
-
 const baseOrigins = [
   process.env.FRONTEND_URL || "http://localhost:3000",
   process.env.ADMIN_FRONTEND_URL || "http://admin.localhost:3000",
@@ -44,26 +34,46 @@ const envAllowed = process.env.ALLOWED_ORIGINS
 
 const allowedOrigins = Array.from(new Set([...baseOrigins, ...envAllowed]));
 
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      origin.includes("netlify.app") ||
+      origin.includes("baseradu.in") ||
+      origin.includes("localhost") ||
+      origin.includes("127.0.0.1")
+    ) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+    "Origin",
+  ],
+  exposedHeaders: ["Set-Cookie"],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
 app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (
-        !origin ||
-        allowedOrigins.includes(origin) ||
-        origin.endsWith(".netlify.app") ||
-        origin.endsWith(".baseradu.in") ||
-        origin.includes("localhost")
-      ) {
-        callback(null, true);
-      } else {
-        callback(new Error("CORS origin blocked"));
-      }
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
   })
 );
+app.use(morgan("dev"));
+app.use(express.json({ limit: "15mb" }));
+app.use(express.urlencoded({ extended: true, limit: "15mb" }));
+app.use(cookieParser());
 
 app.get("/health", (_req, res) => {
   res.status(200).json({
@@ -84,16 +94,18 @@ app.get("/", (_req, res) => {
 });
 
 app.use("/api/v1/public", publicRoutes);
-
 app.use("/api/v1/auth", studentAuthRoutes);
-
 app.use("/api/v1/student/verify-college-email", collegeVerificationRoutes);
-
 app.use("/api/v1/student", studentRoutes);
-
 app.use("/api/v1/admin/auth", adminAuthRoutes);
-
 app.use("/api/v1/admin", adminRoutes);
+
+app.use("/public", publicRoutes);
+app.use("/auth", studentAuthRoutes);
+app.use("/student/verify-college-email", collegeVerificationRoutes);
+app.use("/student", studentRoutes);
+app.use("/admin/auth", adminAuthRoutes);
+app.use("/admin", adminRoutes);
 
 app.use((_req, _res, next) => {
   next(new ApiError(404, "Endpoint not found"));
@@ -101,9 +113,12 @@ app.use((_req, _res, next) => {
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`🚀 Basera Backend API Gateway running on port ${PORT}`);
-  console.log(`📡 Environment: ${process.env.NODE_ENV || "development"}`);
-});
+if (process.env.NODE_ENV !== "test") {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Basera Backend Engine running on port ${PORT}`);
+    console.log(`📡 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log(`🌐 Base URL: http://localhost:${PORT}/api/v1\n`);
+  });
+}
 
 export default app;
