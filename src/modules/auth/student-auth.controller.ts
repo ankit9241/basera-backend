@@ -121,6 +121,7 @@ export async function verifyStudentOtp(req: Request, res: Response, next: NextFu
     res.status(200).json({
       success: true,
       message: "Successfully authenticated",
+      token,
       user: {
         id: user.id,
         phone: user.phone,
@@ -321,6 +322,7 @@ export async function verifyStudentEmailOtp(
     res.status(200).json({
       success: true,
       message: "Successfully verified and authenticated.",
+      token,
       isNewUser: !isProfileComplete,
       user: {
         id: user.id,
