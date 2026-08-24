@@ -15,9 +15,9 @@ const reports: TestReport[] = [];
 function record(name: string, passed: boolean, details?: string, error?: string) {
   reports.push({ name, passed, details, error });
   if (passed) {
-    console.log(`✅ [PASS] ${name}${details ? ` — ${details}` : ""}`);
+    console.log(`✅ [PASS] ${name}${details ? ` - ${details}` : ""}`);
   } else {
-    console.error(`❌ [FAIL] ${name}${error ? ` — ${error}` : ""}`);
+    console.error(`❌ [FAIL] ${name}${error ? ` - ${error}` : ""}`);
   }
 }
 
@@ -285,11 +285,11 @@ async function runTestSuite() {
     record(
       "Shortlist (Favourites) PostgreSQL Persistence & Unsave Cycle",
       saveRes.status === 200 &&
-        saveData.saved === true &&
-        isSavedInDb &&
-        unsaveRes.status === 200 &&
-        unsaveData.saved === false &&
-        isRemovedFromDb,
+      saveData.saved === true &&
+      isSavedInDb &&
+      unsaveRes.status === 200 &&
+      unsaveData.saved === false &&
+      isRemovedFromDb,
       `Successfully saved property, verified in DB (${getSavedData.total}), unsaved and verified removal (${getUnsavedData.total})`
     );
   } catch (err: any) {

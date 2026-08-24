@@ -56,24 +56,31 @@ router.post("/properties/:id/verify", requireAdminAuth("properties.verify"), ver
 router.get("/visits", requireAdminAuth("visits.read"), getAdminVisitsQueue);
 router.patch("/visits/:id/status", requireAdminAuth("visits.manage"), updateAdminVisitStatus);
 
-router.get("/students", requireAdminAuth("students.read"), async (_req, res, next) => {
-  try {
-    const students = await prisma.user.findMany({
-      include: {
-        college: { select: { name: true, shortCode: true } },
-        _count: { select: { visits: true, savedListings: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+import {
+  listAdminStudents,
+  getAdminStudentDetail,
+  updateAdminStudent,
+  deleteAdminStudent,
+} from "../../modules/admin/admin-student.controller";
 
-    res.status(200).json({
-      success: true,
-      total: students.length,
-      students,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+router.get("/students", requireAdminAuth("students.read"), listAdminStudents);
+router.get("/students/:id", requireAdminAuth("students.read"), getAdminStudentDetail);
+router.patch("/students/:id", requireAdminAuth("students.manage"), updateAdminStudent);
+router.put("/students/:id", requireAdminAuth("students.manage"), updateAdminStudent);
+router.delete("/students/:id", requireAdminAuth("students.manage"), deleteAdminStudent);
+
+import {
+  registerAdminDevice,
+  removeAdminDevice,
+  getAdminNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+} from "../../modules/notifications/notification.controller";
+
+router.post("/notifications/devices", requireAdminAuth(), registerAdminDevice);
+router.delete("/notifications/devices/:idOrToken", requireAdminAuth(), removeAdminDevice);
+router.get("/notifications", requireAdminAuth(), getAdminNotifications);
+router.patch("/notifications/read-all", requireAdminAuth(), markAllNotificationsAsRead);
+router.patch("/notifications/:id/read", requireAdminAuth(), markNotificationAsRead);
 
 export default router;

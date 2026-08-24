@@ -14,7 +14,7 @@ function assert(condition: boolean, name: string, details?: string) {
     console.log(`  [PASS] ${name}`);
   } else {
     results.push({ name, passed: false, details });
-    console.error(`  [FAIL] ${name} — ${details || "Assertion failed"}`);
+    console.error(`  [FAIL] ${name} - ${details || "Assertion failed"}`);
   }
 }
 

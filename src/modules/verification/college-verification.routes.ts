@@ -3,6 +3,7 @@ import {
   requestCollegeVerification,
   confirmCollegeVerification,
   getWhitelistedDomains,
+  verifyCollegeEmailWithOtp,
 } from "./college-verification.controller";
 import { requireStudentAuth } from "../../middleware/auth";
 import { rateLimiter } from "../../middleware/rate-limiter";
@@ -16,6 +17,13 @@ router.post(
   requireStudentAuth,
   rateLimiter(15 * 60 * 1000, 3, "Too many verification requests."),
   requestCollegeVerification
+);
+
+router.post(
+  "/verify-otp",
+  requireStudentAuth,
+  rateLimiter(15 * 60 * 1000, 10, "Too many attempts."),
+  verifyCollegeEmailWithOtp
 );
 
 router.get("/confirm", confirmCollegeVerification);

@@ -20,6 +20,8 @@ export async function getPublicProperties(
     const {
       q,
       location,
+      college,
+      collegeId,
       type,
       gender,
       budget,
@@ -65,9 +67,12 @@ export async function getPublicProperties(
       Recommended: "recommended",
     };
 
+    const targetCollege = typeof college === "string" ? college : typeof collegeId === "string" ? collegeId : undefined;
+
     const result = await searchPublicProperties({
       query: typeof q === "string" ? q : undefined,
       locality: typeof location === "string" ? location : undefined,
+      collegeId: targetCollege,
       type: typeof type === "string" ? type : undefined,
       gender: typeof gender === "string" ? gender : undefined,
       budgetMin,

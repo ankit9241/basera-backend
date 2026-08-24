@@ -7,6 +7,8 @@ import { toPublicPropertyDTO } from "../../dtos/property.dto";
 const updateProfileSchema = z.object({
   fullName: z.string().min(2).optional(),
   personalEmail: z.string().email().optional().or(z.literal("")),
+  collegeId: z.string().optional(),
+  studyYear: z.string().optional(),
   budgetRange: z.string().optional(),
   gender: z.string().optional(),
   preferredLocations: z.array(z.string()).optional(),
@@ -52,6 +54,8 @@ export async function updateStudentProfile(
       where: { id: user.id },
       data: {
         ...(data.fullName ? { fullName: data.fullName } : {}),
+        ...(data.collegeId ? { collegeId: data.collegeId } : {}),
+        ...(data.studyYear ? { studyYear: data.studyYear } : {}),
         ...(data.personalEmail !== undefined ? { personalEmail: data.personalEmail || null } : {}),
         ...(data.budgetRange !== undefined ? { budgetRange: data.budgetRange } : {}),
         ...(data.gender !== undefined ? { gender: data.gender } : {}),

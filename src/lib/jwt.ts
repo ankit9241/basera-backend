@@ -45,22 +45,24 @@ export const ADMIN_COOKIE_NAME = "basera_admin_session";
 
 export function getStudentCookieOptions(): CookieOptions {
   const isProd = process.env.NODE_ENV === "production";
+  const sameSiteValue: "none" | "lax" | "strict" = (process.env.COOKIE_SAME_SITE as any) || (isProd ? "none" : "lax");
   return {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "lax" : "lax",
-    maxAge: 30 * 24 * 60 * 60 * 1000, 
+    secure: isProd || sameSiteValue === "none",
+    sameSite: sameSiteValue,
+    maxAge: 30 * 24 * 60 * 60 * 1000,
     path: "/",
   };
 }
 
 export function getAdminCookieOptions(): CookieOptions {
   const isProd = process.env.NODE_ENV === "production";
+  const sameSiteValue: "none" | "lax" | "strict" = (process.env.COOKIE_SAME_SITE as any) || (isProd ? "none" : "lax");
   return {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "strict" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000, 
+    secure: isProd || sameSiteValue === "none",
+    sameSite: sameSiteValue,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/",
   };
 }

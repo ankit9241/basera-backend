@@ -50,14 +50,15 @@ enum VisitStatus {
 
 model User {
   id                  String         @id @default(uuid())
-  phone               String         @unique
-  fullName            String
+  phone               String?        @unique
+  fullName            String         @default("DU Student")
   personalEmail       String?
   collegeEmail        String?        @unique
   isCollegeVerified   Boolean        @default(false)
   collegeVerifiedAt   DateTime?
   collegeId           String?
   college             College?       @relation(fields: [collegeId], references: [id])
+  studyYear           String?
   role                UserRole       @default(STUDENT)
   avatarUrl           String?
   budgetRange         String?
@@ -91,6 +92,8 @@ model AdminUser {
   permissions         AdminUserPermission[]
   assignedVisits      VisitBooking[]       @relation("CoordinatorVisits")
   verifiedProperties  Property[]           @relation("AdminVerifiedProperties")
+  notificationDevices AdminNotificationDevice[]
+  notifications       AdminNotification[]
 
   @@index([email])
 }
@@ -327,5 +330,38 @@ model AuditLog {
   targetId            String
   details             Json?
   createdAt           DateTime             @default(now())
+}
+
+model AdminNotificationDevice {
+  id                  String               @id @default(uuid())
+  adminId             String
+  admin               AdminUser            @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  token               String               @unique
+  deviceLabel         String?
+  userAgent           String?
+  isActive            Boolean              @default(true)
+  lastSeenAt          DateTime             @default(now())
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([adminId])
+  @@index([token])
+}
+
+model AdminNotification {
+  id                  String               @id @default(uuid())
+  adminId             String
+  admin               AdminUser            @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  type                String               @default("NEW_VISIT")
+  title               String
+  body                String
+  visitId             String?
+  isRead              Boolean              @default(false)
+  readAt              DateTime?
+  createdAt           DateTime             @default(now())
+
+  @@index([adminId])
+  @@index([isRead])
+  @@index([createdAt])
 }
 

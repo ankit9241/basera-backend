@@ -68,6 +68,19 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
     where.distanceMin = { lte: filters.distanceMax };
   }
 
+  if (filters.collegeId) {
+    where.collegeDistances = {
+      some: {
+        OR: [
+          { collegeId: { equals: filters.collegeId, mode: "insensitive" } },
+          { college: { id: { equals: filters.collegeId, mode: "insensitive" } } },
+          { college: { shortCode: { equals: filters.collegeId, mode: "insensitive" } } },
+          { college: { name: { contains: filters.collegeId, mode: "insensitive" } } },
+        ],
+      },
+    };
+  }
+
   if (filters.amenities && filters.amenities.length > 0) {
     where.amenities = { hasEvery: filters.amenities };
   }
@@ -93,7 +106,27 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
     }),
   ]);
 
-  const properties = rawProperties.map(toPublicPropertyDTO);
+  let properties = rawProperties.map((prop) => {
+    const dto = toPublicPropertyDTO(prop);
+    if (filters.collegeId) {
+      const match = prop.collegeDistances?.find(
+        (cd) =>
+          cd.collegeId.toLowerCase() === filters.collegeId?.toLowerCase() ||
+          cd.college.shortCode.toLowerCase() === filters.collegeId?.toLowerCase() ||
+          cd.college.name.toLowerCase().includes(filters.collegeId?.toLowerCase() || "")
+      );
+      if (match) {
+        dto.distanceMin = match.distanceMinutes;
+        const meterText = match.walkingDistanceM ? `${match.walkingDistanceM}m` : `${match.distanceMinutes * 80}m`;
+        dto.distanceText = `${match.distanceMinutes} min (${meterText}) to ${match.college.name}`;
+      }
+    }
+    return dto;
+  });
+
+  if (filters.collegeId && (!filters.sort || filters.sort === "recommended" || filters.sort === "distance_asc")) {
+    properties = properties.sort((a, b) => a.distanceMin - b.distanceMin);
+  }
 
   return {
     properties,

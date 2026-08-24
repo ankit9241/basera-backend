@@ -41,6 +41,9 @@ export async function requireStudentAuth(
   try {
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
+      include: {
+        college: { select: { id: true, name: true, shortCode: true, campusZone: true } },
+      },
     });
 
     if (!user) {
@@ -48,7 +51,7 @@ export async function requireStudentAuth(
       return;
     }
 
-    req.user = user;
+    req.user = user as any;
     next();
   } catch (error) {
     next(error);
@@ -74,8 +77,11 @@ export async function optionalStudentAuth(
     try {
       const user = await prisma.user.findUnique({
         where: { id: payload.userId },
+        include: {
+          college: { select: { id: true, name: true, shortCode: true, campusZone: true } },
+        },
       });
-      if (user) req.user = user;
+      if (user) req.user = user as any;
     } catch {
     }
   }

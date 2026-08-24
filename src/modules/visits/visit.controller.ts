@@ -4,6 +4,7 @@ import prisma from "../../lib/prisma";
 import { ApiError } from "../../middleware/error-handler";
 import { logAudit } from "../../lib/audit";
 import type { VisitStatus } from "@prisma/client";
+import { NotificationService } from "../notifications/notification.service";
 
 const bookVisitSchema = z.object({
   propertyId: z.string().min(1, "Property ID required"),
@@ -69,6 +70,10 @@ export async function bookStudentVisit(
     console.log(`👤 Student: ${data.studentName} (${data.studentPhone})`);
     console.log(`🏠 Property: ${property.publicName} [${property.propertyCode}]`);
     console.log(`⏰ Slot: ${data.timeSlot} on ${new Date(data.visitDate).toDateString()}\n`);
+
+    NotificationService.notifyNewVisit(visit).catch((err) => {
+      console.error("[NOTIFICATION_DISPATCH_ERROR]", err);
+    });
 
     res.status(201).json({
       success: true,

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient, PropertyLifecycle, PropertyType, GenderCategory, SharingType } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -5,7 +6,6 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Seeding Basera Database...");
 
-  console.log("Creating Admin Permissions...");
   const permissions = [
     { id: "properties.read", category: "properties", description: "View all property records including internal data" },
     { id: "properties.create", category: "properties", description: "Create individual properties" },
@@ -36,7 +36,6 @@ async function main() {
     });
   }
 
-  console.log("Creating SuperAdmin account...");
   const devPasswordHash = "$2b$12$e8Y5M5r8K9Iq3z9G1d5mXe.8hWn3A7jK9v1b2c3d4e5f6g7h8i9j0";
   const superAdmin = await prisma.adminUser.upsert({
     where: { email: "admin@baseradu.in" },
@@ -66,7 +65,6 @@ async function main() {
     });
   }
 
-  console.log("Seeding DU Colleges and Approved Email Domains...");
   const colleges = [
     {
       id: "hindu",
@@ -119,7 +117,7 @@ async function main() {
       shortCode: "SRCC",
       campusZone: "North Campus",
       area: "Maurice Nagar",
-      description: "Commerce corridor — premium PGs and serviced flats within 500 metres.",
+      description: "Commerce corridor - premium PGs and serviced flats within 500 metres.",
       domains: ["srcc.du.ac.in", "srcc.edu"],
     },
     {
@@ -137,7 +135,7 @@ async function main() {
       shortCode: "LSR",
       campusZone: "South Campus",
       area: "Lajpat Nagar IV",
-      description: "South Delhi calm — leafy blocks, cafés and secure girls-only residences.",
+      description: "South Delhi calm - leafy blocks, cafés and secure girls-only residences.",
       domains: ["lsr.edu.in", "lsr.du.ac.in"],
     },
     {
@@ -203,11 +201,10 @@ async function main() {
     },
   });
 
-  console.log("Seeding Initial Verified Properties...");
-  const initialProperties = [
+  const propertiesToSeed = [
     {
       propertyCode: "PF#101",
-      slug: "pf-101-the-study-house-kamla-nagar",
+      slug: "the-study-house",
       publicName: "The Study House",
       type: PropertyType.PG,
       gender: GenderCategory.GIRLS,
@@ -216,8 +213,10 @@ async function main() {
       rentMax: 14500,
       depositAmount: 21750,
       distanceMin: 8,
-      distanceText: "8 min walk to North Campus",
-      description: "The Study House is a carefully verified PG in Kamla Nagar, built around how students actually live — quiet study hours, warm natural light, and a common room worth sitting in. Every room is inspected by a Basera coordinator before it is listed.",
+      distanceText: "8 min to North Campus",
+      rating: 4.9,
+      reviewCount: 48,
+      description: "The Study House is a carefully verified PG in Kamla Nagar, built around how students actually live - quiet study hours, warm light, and a common room worth sitting in. Every room is inspected by a Basera coordinator before it is listed, and the owner agreement is shared with you in writing before you move in.",
       rules: [
         "Entry until 11:00 PM, extendable with prior notice",
         "No smoking inside the premises",
@@ -239,17 +238,25 @@ async function main() {
       internalAdminNotes: "High demand during admission month. Landlord cooperative.",
       rooms: [
         { label: "Single room", sharingType: SharingType.SINGLE, occupancyText: "1 student", rent: 14500, deposit: 21750, totalUnits: 6, availableUnits: 2 },
-        { label: "Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 11200, deposit: 16800, totalUnits: 8, availableUnits: 3 },
+        { label: "Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 11200, deposit: 16800, totalUnits: 8, availableUnits: 4 },
+        { label: "Triple sharing", sharingType: SharingType.TRIPLE, occupancyText: "3 students", rent: 8900, deposit: 13350, totalUnits: 4, availableUnits: 1 },
       ],
       images: [
         "/images/properties/property-1.jpg",
         "/images/properties/property-2.jpg",
         "/images/properties/property-3.jpg",
+        "/images/cta.jpg",
+      ],
+      collegeDistances: [
+        { collegeId: "hansraj", distanceMinutes: 8, walkingDistanceM: 650 },
+        { collegeId: "miranda-house", distanceMinutes: 11, walkingDistanceM: 900 },
+        { collegeId: "srcc", distanceMinutes: 14, walkingDistanceM: 1100 },
+        { collegeId: "hindu", distanceMinutes: 10, walkingDistanceM: 800 },
       ],
     },
     {
       propertyCode: "PF#102",
-      slug: "pf-102-hudson-residences-hudson-lane",
+      slug: "hudson-residences",
       publicName: "Hudson Residences",
       type: PropertyType.FLAT,
       gender: GenderCategory.CO_ED,
@@ -259,7 +266,9 @@ async function main() {
       depositAmount: 28350,
       distanceMin: 12,
       distanceText: "12 min to North Campus gate",
-      description: "Hudson Residences offers modern serviced flat living right on Hudson Lane, surrounded by student cafés and peaceful residential lanes.",
+      rating: 4.8,
+      reviewCount: 60,
+      description: "Hudson Residences offers modern serviced flat living right on Hudson Lane, surrounded by student cafés and peaceful residential lanes. Every flat is pre-fitted with air conditioning, fast broadband, and modular storage.",
       rules: [
         "Quiet hours after 11:30 PM",
         "Housekeeping access permitted during daytime slots",
@@ -278,17 +287,358 @@ async function main() {
       internalSource: "Field Coordinator",
       internalAdminNotes: "Separate electric meters per unit.",
       rooms: [
-        { label: "2 BHK serviced flat", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 18900, deposit: 28350, totalUnits: 4, availableUnits: 1 },
+        { label: "Single room (Private)", sharingType: SharingType.SINGLE, occupancyText: "1 student", rent: 18900, deposit: 28350, totalUnits: 4, availableUnits: 2 },
+        { label: "Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 14500, deposit: 21750, totalUnits: 6, availableUnits: 2 },
       ],
       images: [
         "/images/properties/property-2.jpg",
         "/images/properties/property-3.jpg",
         "/images/properties/property-1.jpg",
+        "/images/hero.jpg",
+      ],
+      collegeDistances: [
+        { collegeId: "hansraj", distanceMinutes: 12, walkingDistanceM: 950 },
+        { collegeId: "kmc", distanceMinutes: 14, walkingDistanceM: 1100 },
+        { collegeId: "ramjas", distanceMinutes: 15, walkingDistanceM: 1200 },
+      ],
+    },
+    {
+      propertyCode: "PF#103",
+      slug: "maurice-coliving",
+      publicName: "Maurice Co-living",
+      type: PropertyType.CO_LIVING,
+      gender: GenderCategory.CO_ED,
+      localityZone: "GTB Nagar",
+      rentMin: 9500,
+      rentMax: 11200,
+      depositAmount: 16800,
+      distanceMin: 4,
+      distanceText: "4 min to North Campus",
+      rating: 4.7,
+      reviewCount: 36,
+      description: "Maurice Co-living is a community-first student housing hub steps away from GTB Nagar Metro Station. Features high-speed fiber, dedicated quiet co-working zones, daily housekeeping, and lively weekend study groups.",
+      rules: [
+        "Common lounge open 24x7 for group studies",
+        "Biometric gate check-in after midnight",
+      ],
+      foodPolicy: "Buffet style meals with daily fruit and milk supply included.",
+      securityDetails: "CCTV surveillance, guard on duty, smart lock system.",
+      amenities: ["Wi-Fi", "Common lounge", "Laundry", "24×7 security"],
+      lifecycleStatus: PropertyLifecycle.PUBLISHED,
+      isVerified: true,
+      verifiedAt: new Date("2026-08-14"),
+      isFeatured: true,
+      internalPropertyName: "Maurice Student Stay Hub",
+      exactAddress: "F-12, GTB Nagar Main Road, Delhi 110009",
+      ownerName: "Vikas Malhotra",
+      ownerPhone: "+91 98222 33445",
+      internalSource: "Direct Scouting",
+      internalAdminNotes: "Owner open to flexible deposit terms.",
+      rooms: [
+        { label: "Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 11200, deposit: 16800, totalUnits: 10, availableUnits: 3 },
+        { label: "Triple sharing", sharingType: SharingType.TRIPLE, occupancyText: "3 students", rent: 9500, deposit: 14250, totalUnits: 6, availableUnits: 2 },
+      ],
+      images: [
+        "/images/properties/property-3.jpg",
+        "/images/properties/property-1.jpg",
+        "/images/properties/property-2.jpg",
+        "/images/cta.jpg",
+      ],
+      collegeDistances: [
+        { collegeId: "sgtb-khalsa", distanceMinutes: 4, walkingDistanceM: 300 },
+        { collegeId: "kmc", distanceMinutes: 9, walkingDistanceM: 700 },
+        { collegeId: "hindu", distanceMinutes: 10, walkingDistanceM: 800 },
+      ],
+    },
+    {
+      propertyCode: "PF#104",
+      slug: "patel-court",
+      publicName: "Patel Court",
+      type: PropertyType.PG,
+      gender: GenderCategory.BOYS,
+      localityZone: "Vijay Nagar",
+      rentMin: 8500,
+      rentMax: 9800,
+      depositAmount: 14700,
+      distanceMin: 10,
+      distanceText: "10 min to North Campus",
+      rating: 4.6,
+      reviewCount: 54,
+      description: "Patel Court in Vijay Nagar offers budget-friendly, spacious boys PG accommodation with home-cooked nutritious meals, study desks, and reliable laundry services.",
+      rules: [
+        "Entry until 11:30 PM",
+        "Cleanliness inspections twice weekly",
+      ],
+      foodPolicy: "Three hot meals daily with morning tea and evening snacks.",
+      securityDetails: "CCTV in lobbies, resident manager on duty.",
+      amenities: ["Wi-Fi", "Meals included", "Laundry", "Study desk"],
+      lifecycleStatus: PropertyLifecycle.PUBLISHED,
+      isVerified: true,
+      verifiedAt: new Date("2026-08-15"),
+      isFeatured: false,
+      internalPropertyName: "Patel Niwas Boys Hostel",
+      exactAddress: "B-44, Single Storey, Vijay Nagar, Delhi 110009",
+      ownerName: "Rameshwar Patel",
+      ownerPhone: "+91 98765 12340",
+      internalSource: "College Referral",
+      internalAdminNotes: "Popular with Hansraj and KMC science students.",
+      rooms: [
+        { label: "Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 9800, deposit: 14700, totalUnits: 8, availableUnits: 4 },
+        { label: "Triple sharing", sharingType: SharingType.TRIPLE, occupancyText: "3 students", rent: 8500, deposit: 12750, totalUnits: 6, availableUnits: 3 },
+      ],
+      images: [
+        "/images/properties/property-1.jpg",
+        "/images/properties/property-3.jpg",
+        "/images/properties/property-2.jpg",
+        "/images/hero.jpg",
+      ],
+      collegeDistances: [
+        { collegeId: "hansraj", distanceMinutes: 10, walkingDistanceM: 800 },
+        { collegeId: "kmc", distanceMinutes: 12, walkingDistanceM: 950 },
+        { collegeId: "ramjas", distanceMinutes: 14, walkingDistanceM: 1100 },
+      ],
+    },
+    {
+      propertyCode: "PF#105",
+      slug: "the-almond-house",
+      publicName: "The Almond House",
+      type: PropertyType.PG,
+      gender: GenderCategory.GIRLS,
+      localityZone: "North Campus",
+      rentMin: 14000,
+      rentMax: 16400,
+      depositAmount: 24600,
+      distanceMin: 5,
+      distanceText: "5 min to North Campus",
+      rating: 4.9,
+      reviewCount: 39,
+      description: "Premium girls residence on University Enclave road. Quiet leafy surroundings, full air conditioning, private balconies, and dedicated high-speed study desks.",
+      rules: [
+        "Parent authorization required for overnight leave",
+        "Quiet study hours strictly maintained between 10 PM - 7 AM",
+      ],
+      foodPolicy: "Dietician-curated pure vegetarian food with juice and salad bar.",
+      securityDetails: "Full biometric gates, 24x7 lady guard, CCTV perimeter.",
+      amenities: ["Wi-Fi", "AC", "Meals included", "Housekeeping", "24×7 security"],
+      lifecycleStatus: PropertyLifecycle.PUBLISHED,
+      isVerified: true,
+      verifiedAt: new Date("2026-08-16"),
+      isFeatured: true,
+      internalPropertyName: "Badam Kunj Girls Residency",
+      exactAddress: "7/12 University Enclave, Near Patel Chest, Delhi 110007",
+      ownerName: "Geeta Singhania",
+      ownerPhone: "+91 98101 99887",
+      internalSource: "Direct Scouting",
+      internalAdminNotes: "High-end student property, zero noise tolerance.",
+      rooms: [
+        { label: "Single room", sharingType: SharingType.SINGLE, occupancyText: "1 student", rent: 16400, deposit: 24600, totalUnits: 5, availableUnits: 1 },
+        { label: "Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 14000, deposit: 21000, totalUnits: 6, availableUnits: 2 },
+      ],
+      images: [
+        "/images/properties/property-2.jpg",
+        "/images/properties/property-1.jpg",
+        "/images/properties/property-3.jpg",
+        "/images/cta.jpg",
+      ],
+      collegeDistances: [
+        { collegeId: "miranda-house", distanceMinutes: 5, walkingDistanceM: 400 },
+        { collegeId: "srcc", distanceMinutes: 7, walkingDistanceM: 550 },
+        { collegeId: "hindu", distanceMinutes: 6, walkingDistanceM: 480 },
+        { collegeId: "daulat-ram", distanceMinutes: 6, walkingDistanceM: 500 },
+      ],
+    },
+    {
+      propertyCode: "PF#106",
+      slug: "nirvana-lofts",
+      publicName: "Nirvana Lofts",
+      type: PropertyType.FLAT,
+      gender: GenderCategory.CO_ED,
+      localityZone: "Mukherjee Nagar",
+      rentMin: 18000,
+      rentMax: 21500,
+      depositAmount: 32250,
+      distanceMin: 18,
+      distanceText: "18 min to North Campus",
+      rating: 4.5,
+      reviewCount: 78,
+      description: "Contemporary designer apartments tailored for UPSC & DU postgraduate students wanting total privacy, silent study environment, dedicated car parking, and modern modular kitchens.",
+      rules: [
+        "Visitors registered at security gate",
+        "Elevator maintenance on 1st Sunday",
+      ],
+      foodPolicy: "Modular gas pipeline, cooking maid options available on request.",
+      securityDetails: "Boom barrier parking, CCTV, intercom to all flats.",
+      amenities: ["Wi-Fi", "AC", "Parking", "Power backup"],
+      lifecycleStatus: PropertyLifecycle.PUBLISHED,
+      isVerified: true,
+      verifiedAt: new Date("2026-08-17"),
+      isFeatured: false,
+      internalPropertyName: "Nirvana Enclave Tower A",
+      exactAddress: "Plot 102, Commercial Complex road, Mukherjee Nagar, Delhi 110009",
+      ownerName: "Capt. Rajeev Verma",
+      ownerPhone: "+91 98118 77665",
+      internalSource: "Direct Scouting",
+      internalAdminNotes: "Long-term leases preferred.",
+      rooms: [
+        { label: "Single 1-BHK Studio", sharingType: SharingType.SINGLE, occupancyText: "1 student", rent: 21500, deposit: 32250, totalUnits: 4, availableUnits: 2 },
+        { label: "2-BHK Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 18000, deposit: 27000, totalUnits: 6, availableUnits: 3 },
+      ],
+      images: [
+        "/images/properties/property-3.jpg",
+        "/images/properties/property-2.jpg",
+        "/images/properties/property-1.jpg",
+        "/images/hero.jpg",
+      ],
+      collegeDistances: [
+        { collegeId: "kmc", distanceMinutes: 16, walkingDistanceM: 1300 },
+        { collegeId: "hansraj", distanceMinutes: 18, walkingDistanceM: 1500 },
+      ],
+    },
+    {
+      propertyCode: "PF#107",
+      slug: "banyan-co-living",
+      publicName: "Banyan Co-living",
+      type: PropertyType.CO_LIVING,
+      gender: GenderCategory.GIRLS,
+      localityZone: "Satya Niketan",
+      rentMin: 11000,
+      rentMax: 12800,
+      depositAmount: 19200,
+      distanceMin: 22,
+      distanceText: "22 min to South Campus / 5 min to Venky",
+      rating: 4.7,
+      reviewCount: 42,
+      description: "Vibrant and aesthetic girls co-living property in the center of Satya Niketan South Campus student hub. Includes spacious library lounge, high-speed WiFi, laundry, and daily cleaning.",
+      rules: [
+        "Entry until 10:30 PM",
+        "Clean shoe policy in study halls",
+      ],
+      foodPolicy: "All meals included with north and south Indian options.",
+      securityDetails: "Biometric authentication, live CCTV monitoring, guard.",
+      amenities: ["Wi-Fi", "Common lounge", "Laundry", "Housekeeping", "Study desk"],
+      lifecycleStatus: PropertyLifecycle.PUBLISHED,
+      isVerified: true,
+      verifiedAt: new Date("2026-08-18"),
+      isFeatured: true,
+      internalPropertyName: "Banyan Tree Girls Home",
+      exactAddress: "Shop 28, Lane 2, Satya Niketan, Moti Bagh, Delhi 110021",
+      ownerName: "Pooja Sethi",
+      ownerPhone: "+91 98114 55667",
+      internalSource: "Direct Scouting",
+      internalAdminNotes: "Right across footbridge to Venkateswara College.",
+      rooms: [
+        { label: "Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 12800, deposit: 19200, totalUnits: 8, availableUnits: 4 },
+        { label: "Triple sharing", sharingType: SharingType.TRIPLE, occupancyText: "3 students", rent: 11000, deposit: 16500, totalUnits: 4, availableUnits: 2 },
+      ],
+      images: [
+        "/images/properties/property-1.jpg",
+        "/images/properties/property-2.jpg",
+        "/images/properties/property-3.jpg",
+        "/images/cta.jpg",
+      ],
+      collegeDistances: [
+        { collegeId: "venky", distanceMinutes: 4, walkingDistanceM: 250 },
+        { collegeId: "lsr", distanceMinutes: 20, walkingDistanceM: 4000 },
+      ],
+    },
+    {
+      propertyCode: "PF#108",
+      slug: "stone-lane-house",
+      publicName: "Stone Lane House",
+      type: PropertyType.PG,
+      gender: GenderCategory.BOYS,
+      localityZone: "GTB Nagar",
+      rentMin: 8800,
+      rentMax: 10500,
+      depositAmount: 15750,
+      distanceMin: 6,
+      distanceText: "6 min to North Campus",
+      rating: 4.4,
+      reviewCount: 51,
+      description: "Conveniently located boys student accommodation near Hudson Lane cafes and GTB Metro. Fitted with high capacity inverter backup, daily hot water, study desks, and three hearty daily meals.",
+      rules: [
+        "No loud music after 11 PM",
+        "Entry until midnight with gate log",
+      ],
+      foodPolicy: "Full breakfast, lunch, tea, and dinner included in base rent.",
+      securityDetails: "24x7 security personnel and camera coverage.",
+      amenities: ["Wi-Fi", "Meals included", "Power backup", "24×7 security"],
+      lifecycleStatus: PropertyLifecycle.PUBLISHED,
+      isVerified: true,
+      verifiedAt: new Date("2026-08-19"),
+      isFeatured: false,
+      internalPropertyName: "Stone Villa Boys PG",
+      exactAddress: "House 33, Stone Lane, GTB Nagar, Delhi 110009",
+      ownerName: "Kailash Chand",
+      ownerPhone: "+91 98119 22331",
+      internalSource: "Field Coordinator",
+      internalAdminNotes: "Friendly landlord, handles maintenance quickly.",
+      rooms: [
+        { label: "Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 10500, deposit: 15750, totalUnits: 6, availableUnits: 2 },
+        { label: "Triple sharing", sharingType: SharingType.TRIPLE, occupancyText: "3 students", rent: 8800, deposit: 13200, totalUnits: 6, availableUnits: 3 },
+      ],
+      images: [
+        "/images/properties/property-2.jpg",
+        "/images/properties/property-3.jpg",
+        "/images/properties/property-1.jpg",
+        "/images/hero.jpg",
+      ],
+      collegeDistances: [
+        { collegeId: "sgtb-khalsa", distanceMinutes: 6, walkingDistanceM: 450 },
+        { collegeId: "hansraj", distanceMinutes: 9, walkingDistanceM: 700 },
+        { collegeId: "hindu", distanceMinutes: 11, walkingDistanceM: 850 },
+      ],
+    },
+    {
+      propertyCode: "PF#109",
+      slug: "the-quiet-quarter",
+      publicName: "The Quiet Quarter",
+      type: PropertyType.FLAT,
+      gender: GenderCategory.GIRLS,
+      localityZone: "South Campus",
+      rentMin: 16500,
+      rentMax: 19800,
+      depositAmount: 29700,
+      distanceMin: 25,
+      distanceText: "25 min to South Campus / 8 min to LSR",
+      rating: 4.8,
+      reviewCount: 65,
+      description: "Serene, green, fully serviced girls flats located in Lajpat Nagar IV near Lady Shri Ram College. Ideal for students seeking boutique, quiet living with dedicated study spaces and security.",
+      rules: [
+        "Visitor registration at lobby desk",
+        "Smoking strictly prohibited",
+      ],
+      foodPolicy: "Equipped kitchenette with microwave, refrigerator, and water purifier.",
+      securityDetails: "Digital access locks, security guards, monitored perimeter.",
+      amenities: ["Wi-Fi", "AC", "Housekeeping", "Parking", "Study desk"],
+      lifecycleStatus: PropertyLifecycle.PUBLISHED,
+      isVerified: true,
+      verifiedAt: new Date("2026-08-20"),
+      isFeatured: true,
+      internalPropertyName: "Lajpat Green Suites",
+      exactAddress: "C-14, Block 4, Lajpat Nagar IV, New Delhi 110024",
+      ownerName: "Anita Oberoi",
+      ownerPhone: "+91 98115 66778",
+      internalSource: "Direct Scouting",
+      internalAdminNotes: "High ratings among LSR senior students.",
+      rooms: [
+        { label: "Single room", sharingType: SharingType.SINGLE, occupancyText: "1 student", rent: 19800, deposit: 29700, totalUnits: 4, availableUnits: 2 },
+        { label: "Double sharing", sharingType: SharingType.DOUBLE, occupancyText: "2 students", rent: 16500, deposit: 24750, totalUnits: 4, availableUnits: 1 },
+      ],
+      images: [
+        "/images/properties/property-3.jpg",
+        "/images/properties/property-1.jpg",
+        "/images/properties/property-2.jpg",
+        "/images/cta.jpg",
+      ],
+      collegeDistances: [
+        { collegeId: "lsr", distanceMinutes: 8, walkingDistanceM: 600 },
+        { collegeId: "venky", distanceMinutes: 22, walkingDistanceM: 4500 },
       ],
     },
   ];
 
-  for (const p of initialProperties) {
+  for (const p of propertiesToSeed) {
     const createdProp = await prisma.property.upsert({
       where: { propertyCode: p.propertyCode },
       update: {
@@ -302,6 +652,8 @@ async function main() {
         depositAmount: p.depositAmount,
         distanceMin: p.distanceMin,
         distanceText: p.distanceText,
+        rating: p.rating,
+        reviewCount: p.reviewCount,
         description: p.description,
         rules: p.rules,
         foodPolicy: p.foodPolicy,
@@ -330,6 +682,8 @@ async function main() {
         depositAmount: p.depositAmount,
         distanceMin: p.distanceMin,
         distanceText: p.distanceText,
+        rating: p.rating,
+        reviewCount: p.reviewCount,
         description: p.description,
         rules: p.rules,
         foodPolicy: p.foodPolicy,
@@ -348,6 +702,7 @@ async function main() {
       },
     });
 
+    await prisma.roomInventory.deleteMany({ where: { propertyId: createdProp.id } });
     for (const r of p.rooms) {
       await prisma.roomInventory.create({
         data: {
@@ -363,6 +718,7 @@ async function main() {
       });
     }
 
+    await prisma.propertyMedia.deleteMany({ where: { propertyId: createdProp.id } });
     for (let i = 0; i < p.images.length; i++) {
       await prisma.propertyMedia.create({
         data: {
@@ -370,6 +726,18 @@ async function main() {
           mediaUrl: p.images[i]!,
           displayOrder: i,
           isPrimary: i === 0,
+        },
+      });
+    }
+
+    await prisma.propertyCollegeDistance.deleteMany({ where: { propertyId: createdProp.id } });
+    for (const cd of p.collegeDistances) {
+      await prisma.propertyCollegeDistance.create({
+        data: {
+          propertyId: createdProp.id,
+          collegeId: cd.collegeId,
+          distanceMinutes: cd.distanceMinutes,
+          walkingDistanceM: cd.walkingDistanceM,
         },
       });
     }

@@ -17,23 +17,43 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 app.use(morgan("dev"));
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 app.use(cookieParser());
 
-const allowedOrigins = [
+const baseOrigins = [
   process.env.FRONTEND_URL || "http://localhost:3000",
   process.env.ADMIN_FRONTEND_URL || "http://admin.localhost:3000",
+  "http://localhost:3000",
+  "http://admin.localhost:3000",
+  "https://basera.netlify.app",
+  "https://basera-admin.netlify.app",
   "https://baseradu.in",
   "https://admin.baseradu.in",
 ];
 
+const envAllowed = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((s) => s.trim())
+  : [];
+
+const allowedOrigins = Array.from(new Set([...baseOrigins, ...envAllowed]));
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".baseradu.in")) {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".netlify.app") ||
+        origin.endsWith(".baseradu.in") ||
+        origin.includes("localhost")
+      ) {
         callback(null, true);
       } else {
         callback(new Error("CORS origin blocked"));
@@ -47,7 +67,7 @@ app.use(
 
 app.get("/health", (_req, res) => {
   res.status(200).json({
-    status: "healthy",
+    status: "ok",
     service: "basera-backend",
     timestamp: new Date().toISOString(),
     version: "1.0.0",
@@ -56,7 +76,7 @@ app.get("/health", (_req, res) => {
 
 app.get("/", (_req, res) => {
   res.status(200).json({
-    message: "Basera API Gateway — Delhi University Student Housing",
+    message: "Basera API Gateway - Delhi University Student Housing",
     version: "1.0.0",
     docs: "/api/v1",
     health: "/health",
