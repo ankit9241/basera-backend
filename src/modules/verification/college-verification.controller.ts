@@ -88,7 +88,7 @@ export async function requestCollegeVerification(
       },
     });
 
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const frontendUrl = process.env.FRONTEND_URL || "https://baseradu.in";
     const verificationUrl = `${frontendUrl}/verify-email?token=${rawToken}`;
 
     await sendCollegeVerificationEmail(

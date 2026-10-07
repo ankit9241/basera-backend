@@ -10,6 +10,7 @@ import {
 import {
   bookStudentVisit,
   getStudentVisits,
+  rescheduleStudentVisit,
   cancelStudentVisit,
 } from "../../modules/visits/visit.controller";
 
@@ -26,6 +27,8 @@ router.post("/saved/merge", mergeSavedListings);
 
 router.get("/visits", getStudentVisits);
 router.post("/visits", bookStudentVisit);
+router.patch("/visits/:id/reschedule", rescheduleStudentVisit);
+router.patch("/visits/:id", rescheduleStudentVisit);
 router.patch("/visits/:id/cancel", cancelStudentVisit);
 
 export default router;

@@ -242,7 +242,7 @@ async function main() {
         { label: "Triple sharing", sharingType: SharingType.TRIPLE, occupancyText: "3 students", rent: 8900, deposit: 13350, totalUnits: 4, availableUnits: 1 },
       ],
       images: [
-        "/images/properties/property-1.jpg",
+        "/images/properties/property-1.png",
         "/images/properties/property-2.jpg",
         "/images/properties/property-3.jpg",
         "/images/cta.jpg",
@@ -293,7 +293,7 @@ async function main() {
       images: [
         "/images/properties/property-2.jpg",
         "/images/properties/property-3.jpg",
-        "/images/properties/property-1.jpg",
+        "/images/properties/property-1.png",
         "/images/hero.jpg",
       ],
       collegeDistances: [
@@ -340,7 +340,7 @@ async function main() {
       ],
       images: [
         "/images/properties/property-3.jpg",
-        "/images/properties/property-1.jpg",
+        "/images/properties/property-1.png",
         "/images/properties/property-2.jpg",
         "/images/cta.jpg",
       ],
@@ -387,7 +387,7 @@ async function main() {
         { label: "Triple sharing", sharingType: SharingType.TRIPLE, occupancyText: "3 students", rent: 8500, deposit: 12750, totalUnits: 6, availableUnits: 3 },
       ],
       images: [
-        "/images/properties/property-1.jpg",
+        "/images/properties/property-1.png",
         "/images/properties/property-3.jpg",
         "/images/properties/property-2.jpg",
         "/images/hero.jpg",
@@ -436,7 +436,7 @@ async function main() {
       ],
       images: [
         "/images/properties/property-2.jpg",
-        "/images/properties/property-1.jpg",
+        "/images/properties/property-1.png",
         "/images/properties/property-3.jpg",
         "/images/cta.jpg",
       ],
@@ -486,7 +486,7 @@ async function main() {
       images: [
         "/images/properties/property-3.jpg",
         "/images/properties/property-2.jpg",
-        "/images/properties/property-1.jpg",
+        "/images/properties/property-1.png",
         "/images/hero.jpg",
       ],
       collegeDistances: [
@@ -531,7 +531,7 @@ async function main() {
         { label: "Triple sharing", sharingType: SharingType.TRIPLE, occupancyText: "3 students", rent: 11000, deposit: 16500, totalUnits: 4, availableUnits: 2 },
       ],
       images: [
-        "/images/properties/property-1.jpg",
+        "/images/properties/property-1.png",
         "/images/properties/property-2.jpg",
         "/images/properties/property-3.jpg",
         "/images/cta.jpg",
@@ -580,7 +580,7 @@ async function main() {
       images: [
         "/images/properties/property-2.jpg",
         "/images/properties/property-3.jpg",
-        "/images/properties/property-1.jpg",
+        "/images/properties/property-1.png",
         "/images/hero.jpg",
       ],
       collegeDistances: [
@@ -627,7 +627,7 @@ async function main() {
       ],
       images: [
         "/images/properties/property-3.jpg",
-        "/images/properties/property-1.jpg",
+        "/images/properties/property-1.png",
         "/images/properties/property-2.jpg",
         "/images/cta.jpg",
       ],

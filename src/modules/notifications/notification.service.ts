@@ -205,4 +205,95 @@ export class NotificationService {
       console.error(`[NOTIFICATION_SERVICE_ERROR] Failed to process new visit notifications:`, error);
     }
   }
+
+  static async notifyRescheduledVisit(visit: any) {
+    try {
+      console.log(`[VISIT_RESCHEDULED] ID: ${visit.id}, Code: ${visit.bookingCode}, Property: ${visit.property.propertyCode}`);
+
+      const eligibleAdmins = await prisma.adminUser.findMany({
+        where: {
+          isActive: true,
+          permissions: {
+            some: {
+              permissionId: { in: ["visits.read", "visits.manage"] },
+            },
+          },
+        },
+        include: {
+          notificationDevices: {
+            where: { isActive: true },
+          },
+        },
+      });
+
+      if (eligibleAdmins.length === 0) {
+        console.log(`[NOTIFY_SKIPPED] No active admins with visits.read/visits.manage permission found.`);
+        return;
+      }
+
+      const title = "Visit Rescheduled";
+      const dateFormatted = new Date(visit.visitDate).toLocaleDateString("en-IN", {
+        month: "short",
+        day: "numeric",
+      });
+      const body = `${visit.property.propertyCode} · ${visit.property.publicName} · Rescheduled to ${dateFormatted}, ${visit.timeSlot} · ${visit.studentName}`;
+
+      for (const admin of eligibleAdmins) {
+        await prisma.adminNotification.create({
+          data: {
+            adminId: admin.id,
+            type: "VISIT_RESCHEDULED",
+            title,
+            body,
+            visitId: visit.id,
+          },
+        });
+        console.log(`[ADMIN_NOTIFICATION_CREATED] Admin: ${admin.email}, Visit: ${visit.bookingCode} (Rescheduled)`);
+      }
+
+      const allTokens: string[] = [];
+      eligibleAdmins.forEach((admin) => {
+        admin.notificationDevices.forEach((d) => {
+          if (d.token && !allTokens.includes(d.token)) {
+            allTokens.push(d.token);
+          }
+        });
+      });
+
+      if (allTokens.length === 0) {
+        console.log(`[FCM_SKIPPED] No registered active FCM devices found for eligible admins.`);
+        return;
+      }
+
+      const pushResult = await sendMulticastPush({
+        title,
+        body,
+        data: {
+          visitId: visit.id,
+          bookingCode: visit.bookingCode,
+          url: `/admin/visits`,
+          type: "VISIT_RESCHEDULED",
+        },
+        tokens: allTokens,
+      });
+
+      if (pushResult.successCount > 0) {
+        console.log(`[FCM_SEND_SUCCESS] Sent push notification to ${pushResult.successCount} devices.`);
+      }
+
+      if (pushResult.failureCount > 0) {
+        console.log(`[FCM_SEND_FAILURE] Failed to deliver push to ${pushResult.failureCount} devices.`);
+      }
+
+      if (pushResult.invalidTokens.length > 0) {
+        await prisma.adminNotificationDevice.updateMany({
+          where: { token: { in: pushResult.invalidTokens } },
+          data: { isActive: false },
+        });
+        console.log(`[INVALID_FCM_DEVICE] Deactivated ${pushResult.invalidTokens.length} expired/invalid device tokens.`);
+      }
+    } catch (error) {
+      console.error(`[NOTIFICATION_SERVICE_ERROR] Failed to process rescheduled visit notifications:`, error);
+    }
+  }
 }

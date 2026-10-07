@@ -1,19 +1,36 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
+*.tsbuildinfo
+
+# Environment variables
 .env
-*.env.example
 .env*.local
 .env.production
+!.env.example
+
+# Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# System & IDE files
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+
+# Testing & Scratch (kept locally, ignored from repo/deployment)
 coverage/
 .turbo/
+scratch/
+scripts/
+
+# Secrets & Keys
 *service-account*.json
 *.pem
 *.key
 credentials.json
-.env.example

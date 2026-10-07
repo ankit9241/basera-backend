@@ -17,37 +17,49 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-const baseOrigins = [
-  process.env.FRONTEND_URL || "http://localhost:3000",
-  process.env.ADMIN_FRONTEND_URL || "http://admin.localhost:3000",
-  "http://localhost:3000",
-  "http://admin.localhost:3000",
-  "https://basera.netlify.app",
-  "https://basera-admin.netlify.app",
+const isProd = process.env.NODE_ENV === "production";
+
+const defaultProdOrigins = [
   "https://baseradu.in",
+  "https://www.baseradu.in",
   "https://admin.baseradu.in",
 ];
 
-const envAllowed = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",").map((s) => s.trim())
-  : [];
+const defaultDevOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://admin.localhost:3000",
+];
 
-const allowedOrigins = Array.from(new Set([...baseOrigins, ...envAllowed]));
+const configuredOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.ADMIN_FRONTEND_URL,
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",").map((s) => s.trim()) : []),
+].filter((url): url is string => Boolean(url && url.trim()));
+
+const allowedOrigins = Array.from(
+  new Set([...(isProd ? defaultProdOrigins : defaultDevOrigins), ...configuredOrigins])
+);
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    if (
-      !origin ||
-      allowedOrigins.includes(origin) ||
-      origin.includes("netlify.app") ||
-      origin.includes("baseradu.in") ||
-      origin.includes("localhost") ||
-      origin.includes("127.0.0.1")
-    ) {
-      callback(null, true);
-    } else {
-      callback(null, false);
+    if (!origin) {
+      return callback(null, true);
     }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    if (!isProd && (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin))) {
+      return callback(null, true);
+    }
+
+    if (isProd && /^https:\/\/(www\.|admin\.)?baseradu\.in$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    callback(null, false);
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],

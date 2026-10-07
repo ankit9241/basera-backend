@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import crypto from "crypto";
 import prisma from "../../lib/prisma";
-import { signAdminToken, getAdminCookieOptions, ADMIN_COOKIE_NAME } from "../../lib/jwt";
+import { signAdminToken, getAdminCookieOptions, getAdminClearCookieOptions, ADMIN_COOKIE_NAME } from "../../lib/jwt";
 import { ApiError } from "../../middleware/error-handler";
 import { logAudit } from "../../lib/audit";
 
@@ -104,7 +104,7 @@ export async function logoutAdmin(req: Request, res: Response): Promise<void> {
     });
   }
 
-  res.clearCookie(ADMIN_COOKIE_NAME, { path: "/" });
+  res.clearCookie(ADMIN_COOKIE_NAME, getAdminClearCookieOptions());
   res.status(200).json({
     success: true,
     message: "Admin session terminated successfully",

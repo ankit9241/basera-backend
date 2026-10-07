@@ -16,6 +16,13 @@ const bookVisitSchema = z.object({
   notes: z.string().optional(),
 });
 
+const rescheduleVisitSchema = z.object({
+  visitDate: z.string().datetime("Valid ISO date required"),
+  timeSlot: z.string().min(1, "Time slot required"),
+  visitorCount: z.coerce.number().int().min(1).max(5).optional(),
+  notes: z.string().optional(),
+});
+
 function generateBookingCode(): string {
   const num = Math.floor(1000 + Math.random() * 9000);
   return `BAS-${num}`;
@@ -38,35 +45,90 @@ export async function bookStudentVisit(
       throw new ApiError(404, "Selected property is not available for guided visits.");
     }
 
-    const bookingCode = generateBookingCode();
+    // Atomic transaction with advisory lock to strictly enforce ONE ACTIVE VISIT PER PROPERTY
+    const visit = await prisma.$transaction(async (tx) => {
+      // Lock on (user.id, property.id)
+      await tx.$executeRawUnsafe(
+        "SELECT pg_advisory_xact_lock(hashtext($1))",
+        `visit_lock:${user.id}:${property.id}`
+      );
 
-    const visit = await prisma.visitBooking.create({
-      data: {
-        bookingCode,
-        userId: user.id,
-        propertyId: property.id,
-        visitDate: new Date(data.visitDate),
-        timeSlot: data.timeSlot,
-        visitorCount: data.visitorCount,
-        studentName: data.studentName,
-        studentPhone: data.studentPhone,
-        notes: data.notes,
-        status: "PENDING",
-      },
-      include: {
-        property: {
-          select: {
-            id: true,
-            propertyCode: true,
-            publicName: true,
-            localityZone: true,
-            media: { take: 1, select: { mediaUrl: true } },
+      // Check existing active visit
+      const existing = await tx.visitBooking.findFirst({
+        where: {
+          userId: user.id,
+          propertyId: property.id,
+          status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS"] },
+        },
+        include: {
+          property: {
+            select: {
+              id: true,
+              propertyCode: true,
+              publicName: true,
+              localityZone: true,
+              rentMin: true,
+              media: { take: 1, select: { mediaUrl: true } },
+            },
           },
         },
-      },
+      });
+
+      if (existing) {
+        throw new ApiError(
+          409,
+          "You already have an active scheduled visit for this property. You can reschedule your existing appointment instead of booking a duplicate.",
+          {
+            code: "ACTIVE_VISIT_EXISTS",
+            existingVisit: {
+              id: existing.id,
+              bookingCode: existing.bookingCode,
+              visitDate: existing.visitDate,
+              timeSlot: existing.timeSlot,
+              visitorCount: existing.visitorCount,
+              status: existing.status,
+              property: {
+                id: existing.property.id,
+                propertyCode: existing.property.propertyCode,
+                publicName: existing.property.publicName,
+                localityZone: existing.property.localityZone,
+                image: existing.property.media[0]?.mediaUrl || null,
+              },
+            },
+          }
+        );
+      }
+
+      const bookingCode = generateBookingCode();
+
+      return tx.visitBooking.create({
+        data: {
+          bookingCode,
+          userId: user.id,
+          propertyId: property.id,
+          visitDate: new Date(data.visitDate),
+          timeSlot: data.timeSlot,
+          visitorCount: data.visitorCount,
+          studentName: data.studentName,
+          studentPhone: data.studentPhone,
+          notes: data.notes,
+          status: "PENDING",
+        },
+        include: {
+          property: {
+            select: {
+              id: true,
+              propertyCode: true,
+              publicName: true,
+              localityZone: true,
+              media: { take: 1, select: { mediaUrl: true } },
+            },
+          },
+        },
+      });
     });
 
-    console.log(`\n📅 [Visit Booking Confirmed] Code: ${bookingCode}`);
+    console.log(`\n📅 [Visit Booking Confirmed] Code: ${visit.bookingCode}`);
     console.log(`👤 Student: ${data.studentName} (${data.studentPhone})`);
     console.log(`🏠 Property: ${property.publicName} [${property.propertyCode}]`);
     console.log(`⏰ Slot: ${data.timeSlot} on ${new Date(data.visitDate).toDateString()}\n`);
@@ -91,6 +153,94 @@ export async function bookStudentVisit(
           publicName: visit.property.publicName,
           localityZone: visit.property.localityZone,
           image: visit.property.media[0]?.mediaUrl || null,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function rescheduleStudentVisit(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const user = req.user!;
+    const paramVal = req.params.id;
+    const id = Array.isArray(paramVal) ? paramVal[0] : paramVal;
+    if (!id) throw new ApiError(400, "Visit ID required");
+
+    const data = rescheduleVisitSchema.parse(req.body);
+
+    const visit = await prisma.visitBooking.findFirst({
+      where: { id, userId: user.id },
+      include: {
+        property: {
+          select: {
+            id: true,
+            propertyCode: true,
+            publicName: true,
+            localityZone: true,
+          },
+        },
+      },
+    });
+
+    if (!visit) throw new ApiError(404, "Visit not found");
+
+    if (visit.status === "COMPLETED" || visit.status === "CANCELLED") {
+      throw new ApiError(
+        400,
+        `Cannot reschedule a visit that is already ${visit.status.toLowerCase()}. Please schedule a new visit.`
+      );
+    }
+
+    const updated = await prisma.visitBooking.update({
+      where: { id: visit.id },
+      data: {
+        visitDate: new Date(data.visitDate),
+        timeSlot: data.timeSlot,
+        ...(data.visitorCount ? { visitorCount: data.visitorCount } : {}),
+        ...(data.notes !== undefined ? { notes: data.notes } : {}),
+      },
+      include: {
+        property: {
+          select: {
+            id: true,
+            propertyCode: true,
+            publicName: true,
+            localityZone: true,
+            media: { take: 1, select: { mediaUrl: true } },
+          },
+        },
+      },
+    });
+
+    console.log(`\n🔄 [Visit Rescheduled] Code: ${updated.bookingCode}`);
+    console.log(`📅 New Slot: ${updated.timeSlot} on ${new Date(updated.visitDate).toDateString()}\n`);
+
+    NotificationService.notifyRescheduledVisit(updated).catch((err) => {
+      console.error("[NOTIFICATION_RESCHEDULE_ERROR]", err);
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Visit rescheduled successfully.",
+      visit: {
+        id: updated.id,
+        bookingCode: updated.bookingCode,
+        visitDate: updated.visitDate,
+        timeSlot: updated.timeSlot,
+        visitorCount: updated.visitorCount,
+        status: updated.status,
+        property: {
+          id: updated.property.id,
+          propertyCode: updated.property.propertyCode,
+          publicName: updated.property.publicName,
+          localityZone: updated.property.localityZone,
+          image: updated.property.media[0]?.mediaUrl || null,
         },
       },
     });

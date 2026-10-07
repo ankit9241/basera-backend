@@ -40,6 +40,48 @@ enum PropertyLifecycle {
   ARCHIVED
 }
 
+enum FoodStatus {
+  INCLUDED
+  AVAILABLE
+  NOT_AVAILABLE
+}
+
+enum ElectricityBillingType {
+  INCLUDED
+  BY_METER
+  FIXED_MONTHLY
+  EXTRA_AS_PER_USAGE
+}
+
+enum FurnishedStatus {
+  FULLY_FURNISHED
+  SEMI_FURNISHED
+  UNFURNISHED
+}
+
+enum OwnerType {
+  LANDLORD
+  CARETAKER
+  PROPERTY_MANAGER
+  BROKER
+  OTHER
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  OCCUPIED
+  COMING_SOON
+  UNDER_MAINTENANCE
+  PAUSED
+}
+
+enum VerificationStatus {
+  PENDING
+  IN_REVIEW
+  VERIFIED
+  REJECTED
+}
+
 enum VisitStatus {
   PENDING
   CONFIRMED
@@ -50,6 +92,7 @@ enum VisitStatus {
 
 model User {
   id                  String         @id @default(uuid())
+  googleId            String?        @unique
   phone               String?        @unique
   fullName            String         @default("DU Student")
   personalEmail       String?
@@ -77,6 +120,7 @@ model User {
 
   @@index([phone])
   @@index([collegeEmail])
+  @@index([googleId])
 }
 
 model AdminUser {
@@ -152,29 +196,53 @@ model Property {
   type                PropertyType
   gender              GenderCategory
   localityZone        String
+  area                String?
   
-  rentMin             Int
-  rentMax             Int
-  depositAmount       Int
-  distanceMin         Int
-  distanceText        String
-  description         String                    @db.Text
-  rules               String[]                  @default([])
+  // Pricing (monetary values as Decimal)
+  rentMin             Int                       @default(0)
+  rentMax             Int                       @default(0)
+  depositAmount       Decimal                   @default(0) @db.Decimal(10, 2)
+  singleRoomRent      Decimal?                  @db.Decimal(10, 2)
+  doubleRoomRent      Decimal?                  @db.Decimal(10, 2)
+  tripleRoomRent      Decimal?                  @db.Decimal(10, 2)
+
+  // Food & Utilities
+  food                FoodStatus?               @default(NOT_AVAILABLE)
+  foodCharges         Decimal?                  @db.Decimal(10, 2)
   foodPolicy          String?                   @db.Text
-  securityDetails     String?                   @db.Text
+  electricityCharges  Decimal?                  @db.Decimal(10, 2)
+  electricityType     ElectricityBillingType?
+  otherCharges        Decimal?                  @db.Decimal(10, 2)
+
+  // Living, Units & Rules
+  availableRooms      Int?                      @default(1)
+  furnishedStatus     FurnishedStatus?          @default(FULLY_FURNISHED)
   amenities           String[]                  @default([])
+  rules               String[]                  @default([])
+  securityDetails     String?                   @db.Text
+
+  // Location & Metrics
+  distanceMin         Int                       @default(5)
+  distanceText        String                    @default("Near DU Campus")
+  description         String                    @db.Text
   isFeatured          Boolean                   @default(false)
   rating              Float                     @default(4.8)
   reviewCount         Int                       @default(0)
 
+  // Verification
   isVerified          Boolean                   @default(false)
+  verificationStatus  VerificationStatus        @default(PENDING)
+  verificationNotes   String?                   @db.Text
   verifiedAt          DateTime?
   verifiedById        String?
   verifiedBy          AdminUser?                @relation("AdminVerifiedProperties", fields: [verifiedById], references: [id])
   verificationChecklist Json?
 
+  // Availability & Lifecycle
+  availabilityStatus  AvailabilityStatus        @default(AVAILABLE)
   lifecycleStatus     PropertyLifecycle         @default(DRAFT)
 
+  // Internal Confidential Information (Admin Only)
   internalPropertyName String?
   exactAddress        String
   latitude            Float?
@@ -182,6 +250,8 @@ model Property {
   ownerName           String?
   ownerPhone          String?
   ownerAlternatePhone String?
+  ownerType           OwnerType?                @default(LANDLORD)
+  photoDriveLink      String?
   internalSource      String?
   internalAdminNotes  String?                   @db.Text
   
@@ -196,8 +266,11 @@ model Property {
   collegeDistances    PropertyCollegeDistance[]
 
   @@index([localityZone])
+  @@index([area])
   @@index([type])
   @@index([gender])
+  @@index([availabilityStatus])
+  @@index([verificationStatus])
   @@index([lifecycleStatus])
   @@index([propertyCode])
 }
@@ -226,9 +299,18 @@ model PropertyMedia {
   mediaType           String               @default("image")
   displayOrder        Int                  @default(0)
   isPrimary           Boolean              @default(false)
+  storageProvider     String               @default("LOCAL")
+  storageKey          String?
+  altText             String?
+  width               Int?
+  height              Int?
+  fileSize            Int?
   createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @default(now()) @updatedAt
 
   @@index([propertyId])
+  @@index([propertyId, displayOrder])
+  @@index([storageProvider])
 }
 
 model PropertyCollegeDistance {
