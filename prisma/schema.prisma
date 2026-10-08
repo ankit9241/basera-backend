@@ -339,7 +339,7 @@ model PropertyReview {
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   rating              Int
   reviewText          String               @db.Text
-  status              ReviewStatus         @default(PENDING)
+  status              ReviewStatus         @default(APPROVED)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 

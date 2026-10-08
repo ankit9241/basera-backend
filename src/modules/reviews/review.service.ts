@@ -29,6 +29,7 @@ export interface AdminReviewDTO {
     collegeEmail: string | null;
     phone: string | null;
     isCollegeVerified: boolean;
+    college?: { id: string; name: string; shortCode: string; campusZone?: string } | null;
   };
   rating: number;
   reviewText: string;
@@ -191,23 +192,26 @@ export async function createStudentReviewService(params: {
     );
   }
 
-  // 3. Create review with PENDING status
+  // 3. Create review with APPROVED status (immediately public, no admin approval required)
   const review = await prisma.propertyReview.create({
     data: {
       propertyId,
       userId,
       rating,
       reviewText: reviewText.trim(),
-      status: "PENDING",
+      status: "APPROVED",
     },
   });
+
+  // 4. Immediately recalculate property rating and reviewCount
+  await calculatePropertyRatingAggregate(propertyId);
 
   return review;
 }
 
 /**
  * Edits an existing review belonging to the student.
- * If the review was previously APPROVED, it returns to PENDING for moderation.
+ * Review remains APPROVED and updates immediately in public view.
  */
 export async function updateStudentReviewService(params: {
   userId: string;
@@ -235,11 +239,11 @@ export async function updateStudentReviewService(params: {
     data: {
       ...(rating !== undefined ? { rating } : {}),
       ...(reviewText !== undefined ? { reviewText: reviewText.trim() } : {}),
-      status: "PENDING", // Return to moderation
+      status: "APPROVED", // Keeps review live immediately
     },
   });
 
-  // Re-calculate property rating aggregate in case it was previously APPROVED
+  // Re-calculate property rating aggregate
   await calculatePropertyRatingAggregate(review.propertyId);
 
   return updated;
@@ -359,6 +363,14 @@ export async function getAdminReviewsService(options: {
             collegeEmail: true,
             phone: true,
             isCollegeVerified: true,
+            college: {
+              select: {
+                id: true,
+                name: true,
+                shortCode: true,
+                campusZone: true,
+              },
+            },
             visits: {
               select: {
                 id: true,
@@ -389,6 +401,14 @@ export async function getAdminReviewsService(options: {
         collegeEmail: r.user.collegeEmail,
         phone: r.user.phone,
         isCollegeVerified: r.user.isCollegeVerified,
+        college: r.user.college
+          ? {
+              id: r.user.college.id,
+              name: r.user.college.name,
+              shortCode: r.user.college.shortCode,
+              campusZone: r.user.college.campusZone,
+            }
+          : null,
       },
       rating: r.rating,
       reviewText: r.reviewText,

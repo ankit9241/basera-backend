@@ -8,7 +8,9 @@ import { NotificationService } from "../notifications/notification.service";
 
 const bookVisitSchema = z.object({
   propertyId: z.string().min(1, "Property ID required"),
-  visitDate: z.string().datetime("Valid ISO date required"),
+  visitDate: z.string().refine((val) => !isNaN(Date.parse(val)), {
+    message: "Valid date required",
+  }),
   timeSlot: z.string().min(1, "Time slot required"),
   visitorCount: z.coerce.number().int().min(1).max(5).default(1),
   studentName: z.string().min(2),
@@ -17,7 +19,9 @@ const bookVisitSchema = z.object({
 });
 
 const rescheduleVisitSchema = z.object({
-  visitDate: z.string().datetime("Valid ISO date required"),
+  visitDate: z.string().refine((val) => !isNaN(Date.parse(val)), {
+    message: "Valid date required",
+  }),
   timeSlot: z.string().min(1, "Time slot required"),
   visitorCount: z.coerce.number().int().min(1).max(5).optional(),
   notes: z.string().optional(),
@@ -391,7 +395,10 @@ export async function getAdminVisitsQueue(
           select: { id: true, fullName: true, phone: true },
         },
       },
-      orderBy: { visitDate: "asc" },
+      orderBy: [
+        { createdAt: "desc" },
+        { visitDate: "desc" },
+      ],
     });
 
     res.status(200).json({

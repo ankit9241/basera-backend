@@ -18,6 +18,12 @@ import {
   type PublicPropertyDTO,
   type AdminPropertyDTO,
 } from "../../dtos/property.dto";
+import {
+  matchLocality,
+  parseNaturalSearchQuery,
+  getNearbyLocalities,
+  type ParsedSearchIntent,
+} from "./search-v2";
 
 export interface PropertyQueryFilters {
   query?: string;
@@ -39,23 +45,134 @@ export interface PropertyQueryFilters {
   page?: number;
 }
 
-export async function searchPublicProperties(filters: PropertyQueryFilters): Promise<{
+export interface SearchV2Metadata {
+  normalizedQuery?: string;
+  inferredIntent?: {
+    type?: string;
+    gender?: string;
+    sharing?: string;
+    budgetMin?: number;
+    budgetMax?: number;
+    locality?: string;
+  };
+  appliedLocality?: string;
+  suggestion?: {
+    locality: string;
+    text: string;
+  };
+  zeroResultFallback?: {
+    requestedLocality: string;
+    hasConfiguredNearby: boolean;
+    nearbyLocalities: {
+      name: string;
+      count: number;
+    }[];
+  };
+}
+
+export interface SearchPublicPropertiesResult {
   properties: PublicPropertyDTO[];
   total: number;
   page: number;
   totalPages: number;
-}> {
+  searchMeta?: SearchV2Metadata;
+  fallbackProperties?: PublicPropertyDTO[];
+}
+
+export async function searchPublicProperties(filters: PropertyQueryFilters): Promise<SearchPublicPropertiesResult> {
   const limit = Math.min(filters.limit || 12, 50);
   const page = Math.max(filters.page || 1, 1);
   const skip = (page - 1) * limit;
+
+  // Search V2 Parsing & Normalization State
+  let effectiveLocality =
+    filters.locality && filters.locality !== "All" && filters.locality !== "all"
+      ? filters.locality.trim()
+      : undefined;
+  let effectiveType =
+    filters.type && filters.type !== "all" && filters.type !== "ALL"
+      ? filters.type
+      : undefined;
+  let effectiveGender =
+    filters.gender && filters.gender !== "all" && filters.gender !== "ALL"
+      ? filters.gender
+      : undefined;
+  let effectiveSharing =
+    filters.sharing && filters.sharing !== "all"
+      ? filters.sharing
+      : undefined;
+  let effectiveBudgetMin = filters.budgetMin;
+  let effectiveBudgetMax = filters.budgetMax;
+  let remainingSearchText: string | undefined = undefined;
+  let suggestedLocality: string | undefined = undefined;
+  let appliedLocality: string | undefined = undefined;
+  let parsedIntent: ParsedSearchIntent | undefined;
+
+  // 1. Process explicit locality filter with typo tolerance
+  if (effectiveLocality) {
+    const locMatch = matchLocality(effectiveLocality);
+    if (locMatch && locMatch.confidence === "HIGH") {
+      effectiveLocality = locMatch.locality.canonicalName;
+      appliedLocality = locMatch.locality.canonicalName;
+    } else if (locMatch && locMatch.confidence === "MEDIUM") {
+      suggestedLocality = locMatch.locality.canonicalName;
+    }
+  }
+
+  // 2. Process query string (Check property code vs natural language query)
+  if (filters.query && filters.query.trim()) {
+    const rawQ = filters.query.trim();
+    const isPropertyCode = /^PF[-#]?\d+$/i.test(rawQ);
+
+    if (isPropertyCode) {
+      remainingSearchText = rawQ;
+    } else {
+      parsedIntent = parseNaturalSearchQuery(rawQ);
+
+      // Explicit UI filters take priority over inferred query intent
+      if (!effectiveType && parsedIntent.inferredType) {
+        effectiveType = parsedIntent.inferredType;
+      }
+      if (!effectiveGender && parsedIntent.inferredGender) {
+        effectiveGender = parsedIntent.inferredGender;
+      }
+      if (!effectiveSharing && parsedIntent.inferredSharing) {
+        effectiveSharing = parsedIntent.inferredSharing;
+      }
+      if (effectiveBudgetMin === undefined && parsedIntent.inferredBudgetMin !== undefined) {
+        effectiveBudgetMin = parsedIntent.inferredBudgetMin;
+      }
+      if (effectiveBudgetMax === undefined && parsedIntent.inferredBudgetMax !== undefined) {
+        effectiveBudgetMax = parsedIntent.inferredBudgetMax;
+      }
+
+      // Locality resolution
+      if (!effectiveLocality) {
+        if (parsedIntent.inferredLocality) {
+          effectiveLocality = parsedIntent.inferredLocality;
+          appliedLocality = parsedIntent.inferredLocality;
+        } else if (parsedIntent.unrecognizedLocality) {
+          effectiveLocality = parsedIntent.unrecognizedLocality;
+        }
+      }
+
+      if (!suggestedLocality && parsedIntent.suggestedLocality) {
+        suggestedLocality = parsedIntent.suggestedLocality;
+      }
+
+      if (parsedIntent.remainingQuery) {
+        remainingSearchText = parsedIntent.remainingQuery;
+      }
+    }
+  }
 
   const where: Prisma.PropertyWhereInput = {
     lifecycleStatus: "PUBLISHED",
   };
 
-  // 1. Search Query: case-insensitive match on publicName, propertyCode (with PF# / PF- normalization), localityZone, area, description
-  if (filters.query && filters.query.trim()) {
-    const q = filters.query.trim();
+  // Search Query: if remaining search text is present, match across name, code, description
+  if (remainingSearchText && remainingSearchText.trim()) {
+    const q = remainingSearchText.trim();
     const normalizedCode = q.toUpperCase().replace(/^PF-/, "PF#");
     const unhyphenatedCode = q.toUpperCase().replace("-", "#");
     const directHash =
@@ -77,9 +194,9 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
 
   const andConditions: Prisma.PropertyWhereInput[] = [];
 
-  // 2. Locality / Area filter
-  if (filters.locality && filters.locality !== "All" && filters.locality.trim()) {
-    const loc = filters.locality.trim();
+  // Locality / Area filter
+  if (effectiveLocality && effectiveLocality.trim()) {
+    const loc = effectiveLocality.trim();
     andConditions.push({
       OR: [
         { localityZone: { contains: loc, mode: "insensitive" } },
@@ -88,14 +205,14 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
     });
   }
 
-  // 3. Property Type filter (PG, FLAT, CO_LIVING)
-  if (filters.type && filters.type !== "all" && filters.type !== "ALL") {
-    where.type = filters.type as PropertyType;
+  // Property Type filter (PG, FLAT, CO_LIVING)
+  if (effectiveType && effectiveType !== "all" && effectiveType !== "ALL") {
+    where.type = effectiveType as PropertyType;
   }
 
-  // 4. Gender filter (BOYS, GIRLS, CO_ED)
-  if (filters.gender && filters.gender !== "all" && filters.gender !== "ALL") {
-    where.gender = filters.gender as GenderCategory;
+  // Gender filter (BOYS, GIRLS, CO_ED)
+  if (effectiveGender && effectiveGender !== "all" && effectiveGender !== "ALL") {
+    where.gender = effectiveGender as GenderCategory;
   }
 
   // 5. Room Type / Sharing filter (SINGLE, DOUBLE, TRIPLE)
@@ -314,11 +431,109 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
     properties = properties.sort((a, b) => a.distanceMin - b.distanceMin);
   }
 
+  let zeroResultFallback: SearchV2Metadata["zeroResultFallback"] | undefined;
+  let fallbackProperties: PublicPropertyDTO[] | undefined;
+
+  const requestedLocName = appliedLocality || effectiveLocality;
+
+  if (total === 0 && requestedLocName) {
+    const nearbyDefs = getNearbyLocalities(requestedLocName);
+
+    if (nearbyDefs.length > 0) {
+      // Find published property counts in each genuinely nearby locality
+      const nearbyCounts = await Promise.all(
+        nearbyDefs.map(async (def) => {
+          const count = await prisma.property.count({
+            where: {
+              lifecycleStatus: "PUBLISHED",
+              OR: [
+                { localityZone: { contains: def.canonicalName, mode: "insensitive" } },
+                { area: { contains: def.canonicalName, mode: "insensitive" } },
+              ],
+              ...(effectiveType ? { type: effectiveType as PropertyType } : {}),
+              ...(effectiveGender ? { gender: effectiveGender as GenderCategory } : {}),
+            },
+          });
+          return { name: def.canonicalName, count };
+        })
+      );
+
+      const activeNearby = nearbyCounts.filter((item) => item.count > 0);
+
+      if (activeNearby.length > 0) {
+        // Fetch top published listings from active nearby areas
+        const nearbyNames = activeNearby.map((n) => n.name);
+        const rawFallback = await prisma.property.findMany({
+          where: {
+            lifecycleStatus: "PUBLISHED",
+            OR: nearbyNames.flatMap((n) => [
+              { localityZone: { contains: n, mode: "insensitive" } },
+              { area: { contains: n, mode: "insensitive" } },
+            ]),
+            ...(effectiveType ? { type: effectiveType as PropertyType } : {}),
+            ...(effectiveGender ? { gender: effectiveGender as GenderCategory } : {}),
+          },
+          orderBy: [{ isFeatured: "desc" }, { rating: "desc" }],
+          take: 6,
+          include: {
+            rooms: true,
+            media: { orderBy: { displayOrder: "asc" } },
+            collegeDistances: { include: { college: true } },
+          },
+        });
+
+        fallbackProperties = rawFallback.map((p) => toPublicPropertyDTO(p));
+        zeroResultFallback = {
+          requestedLocality: requestedLocName,
+          hasConfiguredNearby: true,
+          nearbyLocalities: activeNearby,
+        };
+      } else {
+        zeroResultFallback = {
+          requestedLocality: requestedLocName,
+          hasConfiguredNearby: true,
+          nearbyLocalities: [],
+        };
+      }
+    } else {
+      // Locality not in Basera catalog and has no configured nearby relationship
+      zeroResultFallback = {
+        requestedLocality: requestedLocName,
+        hasConfiguredNearby: false,
+        nearbyLocalities: [],
+      };
+    }
+  }
+
+  const searchMeta: SearchV2Metadata = {
+    normalizedQuery: parsedIntent?.normalizedQuery,
+    inferredIntent: parsedIntent
+      ? {
+          type: parsedIntent.inferredType,
+          gender: parsedIntent.inferredGender,
+          sharing: parsedIntent.inferredSharing,
+          budgetMin: parsedIntent.inferredBudgetMin,
+          budgetMax: parsedIntent.inferredBudgetMax,
+          locality: parsedIntent.inferredLocality || parsedIntent.unrecognizedLocality,
+        }
+      : undefined,
+    appliedLocality,
+    suggestion: suggestedLocality
+      ? {
+          locality: suggestedLocality,
+          text: suggestedLocality,
+        }
+      : undefined,
+    zeroResultFallback,
+  };
+
   return {
     properties,
     total,
     page,
     totalPages: Math.ceil(total / limit),
+    searchMeta,
+    fallbackProperties,
   };
 }
 
