@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import type { CookieOptions } from "express";
+import type { CookieOptions, Request } from "express";
 
 const STUDENT_JWT_SECRET = process.env.STUDENT_JWT_SECRET || "basera_student_dev_secret_key_min_32_chars_long_123";
 const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || "basera_admin_dev_secret_key_min_32_chars_long_456";
@@ -43,42 +43,51 @@ export function verifyAdminToken(token: string): AdminJwtPayload | null {
 export const STUDENT_COOKIE_NAME = "basera_student_session";
 export const ADMIN_COOKIE_NAME = "basera_admin_session";
 
-export function getStudentCookieOptions(): CookieOptions {
+function resolveCookieDomain(req?: Request): string | undefined {
+  const isProd = process.env.NODE_ENV === "production";
+  if (!isProd || !process.env.COOKIE_DOMAIN) return undefined;
+  if (!req) return process.env.COOKIE_DOMAIN;
+  const origin = String(req.headers.origin || req.headers.host || "");
+  const domainClean = process.env.COOKIE_DOMAIN.replace(/^\./, "");
+  return origin.includes(domainClean) ? process.env.COOKIE_DOMAIN : undefined;
+}
+
+export function getStudentCookieOptions(req?: Request): CookieOptions {
   const isProd = process.env.NODE_ENV === "production";
   const sameSiteValue: "none" | "lax" | "strict" = (process.env.COOKIE_SAME_SITE as any) || (isProd ? "none" : "lax");
-  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+  const cookieDomain = resolveCookieDomain(req);
   return {
     httpOnly: true,
-    secure: isProd || sameSiteValue === "none",
-    sameSite: sameSiteValue,
+    secure: isProd,
+    sameSite: isProd ? sameSiteValue : "lax",
     maxAge: 30 * 24 * 60 * 60 * 1000,
     path: "/",
     domain: cookieDomain,
   };
 }
 
-export function getAdminCookieOptions(): CookieOptions {
+export function getAdminCookieOptions(req?: Request): CookieOptions {
   const isProd = process.env.NODE_ENV === "production";
   const sameSiteValue: "none" | "lax" | "strict" = (process.env.COOKIE_SAME_SITE as any) || (isProd ? "none" : "lax");
-  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+  const cookieDomain = resolveCookieDomain(req);
   return {
     httpOnly: true,
-    secure: isProd || sameSiteValue === "none",
-    sameSite: sameSiteValue,
+    secure: isProd,
+    sameSite: isProd ? sameSiteValue : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/",
     domain: cookieDomain,
   };
 }
 
-export function getStudentClearCookieOptions(): CookieOptions {
+export function getStudentClearCookieOptions(req?: Request): CookieOptions {
   const isProd = process.env.NODE_ENV === "production";
   const sameSiteValue: "none" | "lax" | "strict" = (process.env.COOKIE_SAME_SITE as any) || (isProd ? "none" : "lax");
-  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+  const cookieDomain = resolveCookieDomain(req);
   return {
     httpOnly: true,
-    secure: isProd || sameSiteValue === "none",
-    sameSite: sameSiteValue,
+    secure: isProd,
+    sameSite: isProd ? sameSiteValue : "lax",
     maxAge: 0,
     expires: new Date(0),
     path: "/",
@@ -86,14 +95,14 @@ export function getStudentClearCookieOptions(): CookieOptions {
   };
 }
 
-export function getAdminClearCookieOptions(): CookieOptions {
+export function getAdminClearCookieOptions(req?: Request): CookieOptions {
   const isProd = process.env.NODE_ENV === "production";
   const sameSiteValue: "none" | "lax" | "strict" = (process.env.COOKIE_SAME_SITE as any) || (isProd ? "none" : "lax");
-  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+  const cookieDomain = resolveCookieDomain(req);
   return {
     httpOnly: true,
-    secure: isProd || sameSiteValue === "none",
-    sameSite: sameSiteValue,
+    secure: isProd,
+    sameSite: isProd ? sameSiteValue : "lax",
     maxAge: 0,
     expires: new Date(0),
     path: "/",

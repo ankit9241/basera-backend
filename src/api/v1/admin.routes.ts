@@ -113,4 +113,14 @@ router.get("/notifications", requireAdminAuth(), getAdminNotifications);
 router.patch("/notifications/read-all", requireAdminAuth(), markAllNotificationsAsRead);
 router.patch("/notifications/:id/read", requireAdminAuth(), markNotificationAsRead);
 
+import {
+  getAdminReviews,
+  updateAdminReviewStatus,
+  deleteAdminReview,
+} from "../../modules/reviews/review.controller";
+
+router.get("/reviews", requireAdminAuth("reviews.read"), getAdminReviews);
+router.patch("/reviews/:id/status", requireAdminAuth("reviews.manage"), updateAdminReviewStatus);
+router.delete("/reviews/:id", requireAdminAuth("reviews.manage"), deleteAdminReview);
+
 export default router;

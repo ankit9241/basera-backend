@@ -90,6 +90,12 @@ enum VisitStatus {
   CANCELLED
 }
 
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id                  String         @id @default(uuid())
   googleId            String?        @unique
@@ -226,7 +232,7 @@ model Property {
   distanceText        String                    @default("Near DU Campus")
   description         String                    @db.Text
   isFeatured          Boolean                   @default(false)
-  rating              Float                     @default(4.8)
+  rating              Float                     @default(0)
   reviewCount         Int                       @default(0)
 
   // Verification
@@ -332,11 +338,16 @@ model PropertyReview {
   userId              String
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   rating              Int
-  comment             String               @db.Text
-  isVerifiedStudent   Boolean              @default(false)
+  reviewText          String               @db.Text
+  status              ReviewStatus         @default(PENDING)
   createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
+  @@unique([propertyId, userId])
   @@index([propertyId])
+  @@index([userId])
+  @@index([status])
+  @@index([propertyId, status])
 }
 
 model SavedListing {
@@ -376,18 +387,6 @@ model VisitBooking {
   @@index([propertyId])
   @@index([status])
   @@index([visitDate])
-}
-
-model PhoneOtpSession {
-  id                  String               @id @default(uuid())
-  phone               String
-  otpHash             String
-  attempts            Int                  @default(0)
-  expiresAt           DateTime
-  verified            Boolean              @default(false)
-  createdAt           DateTime             @default(now())
-
-  @@index([phone])
 }
 
 model EmailVerificationToken {

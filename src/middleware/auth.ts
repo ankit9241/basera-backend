@@ -5,6 +5,7 @@ import {
   verifyAdminToken,
   STUDENT_COOKIE_NAME,
   ADMIN_COOKIE_NAME,
+  getAdminClearCookieOptions,
 } from "../lib/jwt";
 import prisma from "../lib/prisma";
 import type { User, AdminUser } from "@prisma/client";
@@ -89,7 +90,7 @@ export async function optionalStudentAuth(
 }
 
 export function requireAdminAuth(requiredPermission?: string) {
-  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const token =
       req.cookies?.[ADMIN_COOKIE_NAME] ||
       req.headers.authorization?.replace(/^Bearer\s+/i, "");
@@ -101,6 +102,7 @@ export function requireAdminAuth(requiredPermission?: string) {
 
     const payload = verifyAdminToken(token);
     if (!payload || payload.role !== "ADMIN") {
+      res.clearCookie(ADMIN_COOKIE_NAME, getAdminClearCookieOptions(req));
       next(new ApiError(401, "Invalid or expired admin session."));
       return;
     }
@@ -116,7 +118,8 @@ export function requireAdminAuth(requiredPermission?: string) {
       });
 
       if (!admin || !admin.isActive) {
-        next(new ApiError(403, "Admin account is deactivated or no longer exists."));
+        res.clearCookie(ADMIN_COOKIE_NAME, getAdminClearCookieOptions(req));
+        next(new ApiError(401, "Admin account is deactivated or no longer exists."));
         return;
       }
 
@@ -143,3 +146,47 @@ export function requireAdminAuth(requiredPermission?: string) {
     }
   };
 }
+
+export async function optionalAdminAuth(
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> {
+  const token =
+    req.cookies?.[ADMIN_COOKIE_NAME] ||
+    req.headers.authorization?.replace(/^Bearer\s+/i, "");
+
+  if (!token) {
+    next();
+    return;
+  }
+
+  const payload = verifyAdminToken(token);
+  if (!payload || payload.role !== "ADMIN") {
+    next();
+    return;
+  }
+
+  try {
+    const admin = await prisma.adminUser.findUnique({
+      where: { id: payload.adminId },
+      include: {
+        permissions: {
+          select: { permissionId: true },
+        },
+      },
+    });
+
+    if (admin && admin.isActive) {
+      req.admin = {
+        ...admin,
+        permissions: admin.permissions.map((p) => p.permissionId),
+      };
+    }
+  } catch {
+    // Non-blocking for optional auth
+  }
+
+  next();
+}
+

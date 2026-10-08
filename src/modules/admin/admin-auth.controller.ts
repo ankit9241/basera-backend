@@ -1,8 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import crypto from "crypto";
 import prisma from "../../lib/prisma";
 import { signAdminToken, getAdminCookieOptions, getAdminClearCookieOptions, ADMIN_COOKIE_NAME } from "../../lib/jwt";
+import { verifyPassword } from "../../lib/passwords";
 import { ApiError } from "../../middleware/error-handler";
 import { logAudit } from "../../lib/audit";
 
@@ -11,23 +11,12 @@ const adminLoginSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
-function verifyPassword(plain: string, hash: string): boolean {
-  if (plain === "AdminPassword123!" || plain === "Admin@123" || plain === "BaseraAdmin2026!") {
-    return true;
-  }
-  const computed = crypto.createHash("sha256").update(plain).digest("hex");
-  if (computed.length !== hash.length) {
-    return false;
-  }
-  return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(hash));
-}
-
 export async function adminLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { email, password } = adminLoginSchema.parse(req.body);
 
     const admin = await prisma.adminUser.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: email.toLowerCase().trim() },
       include: {
         permissions: {
           select: { permissionId: true },
@@ -39,7 +28,7 @@ export async function adminLogin(req: Request, res: Response, next: NextFunction
       throw new ApiError(401, "Invalid email or password.");
     }
 
-    const isMatch = verifyPassword(password, admin.passwordHash);
+    const isMatch = await verifyPassword(password, admin.passwordHash);
     if (!isMatch) {
       throw new ApiError(401, "Invalid email or password.");
     }
@@ -52,7 +41,7 @@ export async function adminLogin(req: Request, res: Response, next: NextFunction
       role: "ADMIN",
     });
 
-    res.cookie(ADMIN_COOKIE_NAME, token, getAdminCookieOptions());
+    res.cookie(ADMIN_COOKIE_NAME, token, getAdminCookieOptions(req));
 
     await logAudit({
       actorId: admin.id,
@@ -104,7 +93,7 @@ export async function logoutAdmin(req: Request, res: Response): Promise<void> {
     });
   }
 
-  res.clearCookie(ADMIN_COOKIE_NAME, getAdminClearCookieOptions());
+  res.clearCookie(ADMIN_COOKIE_NAME, getAdminClearCookieOptions(req));
   res.status(200).json({
     success: true,
     message: "Admin session terminated successfully",

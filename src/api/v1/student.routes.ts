@@ -14,6 +14,13 @@ import {
   cancelStudentVisit,
 } from "../../modules/visits/visit.controller";
 
+import {
+  getStudentPropertyReview,
+  createStudentReview,
+  updateStudentReview,
+  deleteStudentReview,
+} from "../../modules/reviews/review.controller";
+
 const router = Router();
 
 router.use(requireStudentAuth);
@@ -30,5 +37,11 @@ router.post("/visits", bookStudentVisit);
 router.patch("/visits/:id/reschedule", rescheduleStudentVisit);
 router.patch("/visits/:id", rescheduleStudentVisit);
 router.patch("/visits/:id/cancel", cancelStudentVisit);
+
+// Student Review Lifecycle
+router.get("/properties/:propertyId/review", getStudentPropertyReview);
+router.post("/properties/:propertyId/reviews", createStudentReview);
+router.patch("/reviews/:id", updateStudentReview);
+router.delete("/reviews/:id", deleteStudentReview);
 
 export default router;

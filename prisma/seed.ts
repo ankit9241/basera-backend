@@ -36,33 +36,71 @@ async function main() {
     });
   }
 
-  const devPasswordHash = "$2b$12$e8Y5M5r8K9Iq3z9G1d5mXe.8hWn3A7jK9v1b2c3d4e5f6g7h8i9j0";
-  const superAdmin = await prisma.adminUser.upsert({
-    where: { email: "admin@baseradu.in" },
-    update: {},
-    create: {
-      email: "admin@baseradu.in",
-      passwordHash: devPasswordHash,
-      fullName: "Basera System Administrator",
-      phone: "+91 98110 00000",
-      isActive: true,
-    },
-  });
+  // Initial admin setup only if explicitly supplied via environment variables
+  const initialAdminEmail = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
+  const initialAdminPassword = process.env.INITIAL_ADMIN_PASSWORD?.trim();
 
-  for (const p of permissions) {
-    await prisma.adminUserPermission.upsert({
-      where: {
-        adminId_permissionId: {
-          adminId: superAdmin.id,
-          permissionId: p.id,
-        },
+  if (initialAdminEmail && initialAdminPassword) {
+    const { hashPassword } = await import("../src/lib/passwords");
+    const passwordHash = await hashPassword(initialAdminPassword);
+    const admin = await prisma.adminUser.upsert({
+      where: { email: initialAdminEmail },
+      update: {
+        passwordHash,
+        isActive: true,
       },
-      update: {},
       create: {
-        adminId: superAdmin.id,
-        permissionId: p.id,
+        email: initialAdminEmail,
+        passwordHash,
+        fullName: process.env.INITIAL_ADMIN_NAME || "Basera System Administrator",
+        phone: process.env.INITIAL_ADMIN_PHONE || "+91 98110 00000",
+        isActive: true,
       },
     });
+
+    for (const p of permissions) {
+      await prisma.adminUserPermission.upsert({
+        where: {
+          adminId_permissionId: {
+            adminId: admin.id,
+            permissionId: p.id,
+          },
+        },
+        update: {},
+        create: {
+          adminId: admin.id,
+          permissionId: p.id,
+        },
+      });
+    }
+    console.log(`✅ Admin account configured for: ${initialAdminEmail}`);
+  } else {
+    // Check if an existing admin is present in the database to assign any new permissions
+    const existingAdmins = await prisma.adminUser.findMany({ where: { isActive: true } });
+    if (existingAdmins.length > 0) {
+      for (const admin of existingAdmins) {
+        for (const p of permissions) {
+          await prisma.adminUserPermission.upsert({
+            where: {
+              adminId_permissionId: {
+                adminId: admin.id,
+                permissionId: p.id,
+              },
+            },
+            update: {},
+            create: {
+              adminId: admin.id,
+              permissionId: p.id,
+            },
+          });
+        }
+      }
+    } else {
+      console.log(
+        "ℹ️ No admin account currently exists. To create one securely, run:\n" +
+        "   npx tsx scripts/create-or-update-admin.ts"
+      );
+    }
   }
 
   const colleges = [

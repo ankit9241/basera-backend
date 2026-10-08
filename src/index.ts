@@ -106,6 +106,7 @@ app.get("/", (_req, res) => {
 });
 
 app.use("/api/v1/public", publicRoutes);
+app.use("/api/v1", publicRoutes);
 app.use("/api/v1/auth", studentAuthRoutes);
 app.use("/api/v1/student/verify-college-email", collegeVerificationRoutes);
 app.use("/api/v1/student", studentRoutes);
