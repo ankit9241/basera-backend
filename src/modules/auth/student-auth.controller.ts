@@ -3,6 +3,8 @@ import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { signStudentToken, getStudentCookieOptions, getStudentClearCookieOptions, STUDENT_COOKIE_NAME } from "../../lib/jwt";
 import { verifyGoogleCredential } from "../../lib/google-auth";
+import { ApiError } from "../../middleware/error-handler";
+import { Prisma } from "@prisma/client";
 
 const googleAuthSchema = z.object({
   idToken: z.string().optional(),
@@ -26,47 +28,111 @@ export async function googleStudentAuth(
       redirectUri,
     });
 
-    let user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { googleId: verifiedUser.sub },
-          { personalEmail: verifiedUser.email },
-        ],
-      },
+    // 1. Require a verified Google email before account creation or linking
+    if (!verifiedUser.emailVerified) {
+      throw new ApiError(401, "Your Google email isn't verified. Verify it with Google and try again.");
+    }
+
+    const normalizedEmail = verifiedUser.email.toLowerCase().trim();
+    const googleSub = verifiedUser.sub;
+
+    let isNewUser = false;
+    let user;
+
+    // 2. Identify existing accounts
+    const userByGoogleId = await prisma.user.findUnique({
+      where: { googleId: googleSub },
       include: {
         college: { select: { id: true, name: true, shortCode: true, campusZone: true } },
       },
     });
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          googleId: verifiedUser.sub,
-          personalEmail: verifiedUser.email,
-          fullName: verifiedUser.name || verifiedUser.email.split("@")[0] || "Student",
-          avatarUrl: verifiedUser.picture,
-          role: "STUDENT",
-        },
-        include: {
-          college: { select: { id: true, name: true, shortCode: true, campusZone: true } },
-        },
-      });
-    } else {
+    const userByEmail = await prisma.user.findFirst({
+      where: { personalEmail: normalizedEmail },
+      include: {
+        college: { select: { id: true, name: true, shortCode: true, campusZone: true } },
+      },
+    });
+
+    // 3. Reject if Google ID and email resolve to two different user records
+    if (userByGoogleId && userByEmail && userByGoogleId.id !== userByEmail.id) {
+      throw new ApiError(409, "This Google account and email conflict with an existing account. Please sign in with the account you originally used or contact support.");
+    }
+
+    if (userByGoogleId) {
+      // Returning user matched by Google ID
       user = await prisma.user.update({
-        where: { id: user.id },
+        where: { id: userByGoogleId.id },
         data: {
-          googleId: user.googleId || verifiedUser.sub,
-          personalEmail: user.personalEmail || verifiedUser.email,
+          personalEmail: userByGoogleId.personalEmail || normalizedEmail,
           fullName:
-            (!user.fullName || user.fullName === "DU Student" || user.fullName === "Student") && verifiedUser.name
+            (!userByGoogleId.fullName || userByGoogleId.fullName === "DU Student" || userByGoogleId.fullName === "Student") && verifiedUser.name
               ? verifiedUser.name
-              : user.fullName,
-          avatarUrl: user.avatarUrl || verifiedUser.picture,
+              : userByGoogleId.fullName,
+          avatarUrl: userByGoogleId.avatarUrl || verifiedUser.picture,
         },
         include: {
           college: { select: { id: true, name: true, shortCode: true, campusZone: true } },
         },
       });
+      isNewUser = false;
+    } else if (userByEmail) {
+      // Existing user matched by email
+      if (userByEmail.googleId && userByEmail.googleId !== googleSub) {
+        throw new ApiError(409, "This email is linked to a different Google account. Try the account you originally used or contact support.");
+      }
+
+      // Safely link Google identity to this account
+      user = await prisma.user.update({
+        where: { id: userByEmail.id },
+        data: {
+          googleId: googleSub,
+          fullName:
+            (!userByEmail.fullName || userByEmail.fullName === "DU Student" || userByEmail.fullName === "Student") && verifiedUser.name
+              ? verifiedUser.name
+              : userByEmail.fullName,
+          avatarUrl: userByEmail.avatarUrl || verifiedUser.picture,
+        },
+        include: {
+          college: { select: { id: true, name: true, shortCode: true, campusZone: true } },
+        },
+      });
+      isNewUser = false;
+    } else {
+      // First-time user creation
+      try {
+        user = await prisma.user.create({
+          data: {
+            googleId: googleSub,
+            personalEmail: normalizedEmail,
+            fullName: verifiedUser.name || normalizedEmail.split("@")[0] || "Student",
+            avatarUrl: verifiedUser.picture,
+            role: "STUDENT",
+          },
+          include: {
+            college: { select: { id: true, name: true, shortCode: true, campusZone: true } },
+          },
+        });
+        isNewUser = true;
+      } catch (createErr: any) {
+        if (createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === "P2002") {
+          // Concurrent request created user with this googleId
+          const concurrentUser = await prisma.user.findUnique({
+            where: { googleId: googleSub },
+            include: {
+              college: { select: { id: true, name: true, shortCode: true, campusZone: true } },
+            },
+          });
+          if (concurrentUser && (!concurrentUser.personalEmail || concurrentUser.personalEmail === normalizedEmail)) {
+            user = concurrentUser;
+            isNewUser = false;
+          } else {
+            throw new ApiError(409, "This email is linked to a different Google account. Try the account you originally used or contact support.");
+          }
+        } else {
+          throw createErr;
+        }
+      }
     }
 
     const token = signStudentToken({
@@ -80,6 +146,7 @@ export async function googleStudentAuth(
     res.status(200).json({
       success: true,
       message: "Successfully authenticated with Google",
+      isNewUser,
       token,
       user: {
         id: user.id,
@@ -104,6 +171,7 @@ export async function googleStudentAuth(
       },
     });
   } catch (error) {
+    res.clearCookie(STUDENT_COOKIE_NAME, getStudentClearCookieOptions(req));
     next(error);
   }
 }
