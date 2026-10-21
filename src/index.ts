@@ -87,12 +87,12 @@ app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 app.use(cookieParser());
 
-app.get("/health", (_req, res) => {
+app.get(["/health", "/api/health", "/api/v1/health"], (_req, res) => {
   res.status(200).json({
     status: "ok",
-    service: "basera-backend",
+    uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
-    version: "1.0.0",
+    service: "basera-backend",
   });
 });
 
