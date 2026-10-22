@@ -27,6 +27,7 @@ export const CANONICAL_25_HEADERS = [
   "Photos / Drive Link",
   "Verification Status",
   "Verification Notes",
+  "Deposit Policy",
 ] as const;
 
 export type CanonicalHeader = (typeof CANONICAL_25_HEADERS)[number];
@@ -42,6 +43,10 @@ export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
   property_code: "Listing ID",
   code: "Listing ID",
   id: "Listing ID",
+  pgid: "Listing ID",
+  pg_id: "Listing ID",
+  pg: "Listing ID",
+  pgidentifier: "Listing ID",
 
   // 2. Public Name
   publicname: "Public Name",
@@ -78,11 +83,13 @@ export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
   fulladdress: "Exact Address",
   full_address: "Exact Address",
 
-  // 7. Deposit Amount
+  // 7. Deposit Amount (Legacy / Optional) & Deposit Policy
   depositamount: "Deposit Amount",
   deposit_amount: "Deposit Amount",
   deposit: "Deposit Amount",
   securitydeposit: "Deposit Amount",
+  depositpolicy: "Deposit Policy",
+  deposit_policy: "Deposit Policy",
 
   // 8. Single Room Rent
   singleroomrent: "Single Room Rent",
@@ -241,6 +248,30 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
   // Strip UTF-8 Byte Order Mark (BOM) if present
   const text = csvText.replace(/^\uFEFF/, "");
 
+  // Auto-detect delimiter based on first line outside quotes: ',', '\t', or ';'
+  let delimiter = ",";
+  const firstLineEnd = text.search(/[\r\n]/);
+  const sampleHeader = firstLineEnd !== -1 ? text.slice(0, firstLineEnd) : text;
+  let commaCount = 0;
+  let tabCount = 0;
+  let semiCount = 0;
+  let sampleInQuotes = false;
+  for (let s = 0; s < sampleHeader.length; s++) {
+    const ch = sampleHeader[s];
+    if (ch === '"') {
+      sampleInQuotes = !sampleInQuotes;
+    } else if (!sampleInQuotes) {
+      if (ch === ",") commaCount++;
+      else if (ch === "\t") tabCount++;
+      else if (ch === ";") semiCount++;
+    }
+  }
+  if (tabCount > commaCount && tabCount >= semiCount) {
+    delimiter = "\t";
+  } else if (semiCount > commaCount && semiCount > tabCount) {
+    delimiter = ";";
+  }
+
   const rawLines: string[][] = [];
   let currentRow: string[] = [];
   let currentField = "";
@@ -275,7 +306,7 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
         inQuotes = true;
         i++;
         continue;
-      } else if (char === ',') {
+      } else if (char === delimiter) {
         currentRow.push(currentField);
         currentField = "";
         i++;
@@ -382,6 +413,8 @@ export function parseCsvString(csvText: string): Record<string, string>[] {
 /**
  * Pre-formatted Canonical CSV Template for Basera Listings.
  */
-export const CANONICAL_CSV_TEMPLATE = `Listing ID,Public Name,Listing Type,Gender,Area,Exact Address,Deposit Amount,Single Room Rent,Double Room Rent,Triple Room Rent,Food,Food Charges,Electricity Charges,Other Charges,Available Rooms,Furnished Status,Amenities,House Rules,Owner Name,Owner Phone,Owner Type,Availability Status,Photos / Drive Link,Verification Status,Verification Notes
-"PF#991","[EXAMPLE] Green Villa PG","PG","GIRLS","Kamla Nagar","12/4 Block A, Kamla Nagar, Delhi 110007",20000,15000,12000,9500,"Included",0,"By Meter",500,3,"Fully Furnished","Wi-Fi, AC, Geyser, Housekeeping, RO Water","Gate closed at 11 PM, No smoking, Guests in common lounge only","Ramesh Gupta","+91 98110 11111","LANDLORD","AVAILABLE","https://drive.google.com/drive/folders/sample-pf991","VERIFIED","Verified on-site by coordinator."
-"PF#992","[EXAMPLE] Hudson Student Flats","FLAT","CO_ED","Hudson Lane","45 Hudson Lane, Kingsway Camp, Delhi 110009",30000,22000,16000,"","Available",2500,"10/unit",0,2,"Fully Furnished","Wi-Fi, Power backup, Refrigerator, Washing machine","No loud music post 10:30 PM, Verified ID required","Sunita Sharma","+91 98110 22222","LANDLORD","AVAILABLE","https://drive.google.com/drive/folders/sample-pf992","VERIFIED","Separate meter installed per unit."`;
+export const CANONICAL_CSV_TEMPLATE = `PG_ID,Public Name,Listing Type,Gender,Area,Exact Address,Single Room Rent,Double Room Rent,Triple Room Rent,Food,Food Charges,Electricity Charges,Other Charges,Available Rooms,Furnished Status,Amenities,House Rules,Owner Name,Owner Phone,Owner Type,Availability Status,Photos / Drive Link,Verification Status,Verification Notes
+"BAS501","Green Villa Luxury PG","PG","GIRLS","Kamla Nagar","12/4 Block A, Near Chache Di Hatti, Kamla Nagar, Delhi 110007",16000,11000,8500,"Included",0,"As per meter",500,3,"Fully Furnished","Wi-Fi, AC, Geyser, RO Water, Housekeeping, Power Backup, CCTV","Gate closes at 11:00 PM, No smoking, Female guests only, ID proof required","Ramesh Gupta","9811011111","OWNER","AVAILABLE","https://drive.google.com/drive/folders/sample-bas501","VERIFIED","Physical verification completed by Basera team. Biometric entry and 24/7 warden present."
+"BAS502","Hudson Student Haven","PG","BOYS","Hudson Lane","45 Hudson Lane, Near GTB Nagar Metro Gate 3, Delhi 110009",18000,12000,"N.A.","Available",2500,"10/unit",0,2,"Semi Furnished","Wi-Fi, AC, Geyser, Refrigerator, RO Water, Power Backup","No loud music after 10:30 PM, Visitors allowed till 8 PM, No alcohol","Sunita Sharma","9811022222","CARETAKER","FEW_ROOMS_LEFT","https://drive.google.com/drive/folders/sample-bas502","VERIFIED","Sub-meter installed for each room. High-speed fiber Wi-Fi verified."`;
+
+

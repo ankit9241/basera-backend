@@ -83,6 +83,52 @@ router.patch("/properties/:idOrCode/images/:imageId/primary", requireAdminAuth("
 router.delete("/properties/:idOrCode/images/:imageId", requireAdminAuth("properties.edit"), deletePropertyImageController);
 router.get("/imagekit/auth", requireAdminAuth("properties.edit"), getImageKitAuthController);
 
+// Bulk PG Photo Upload via ZIP + ImageKit
+import {
+  inspectBulkPhotoZipController,
+  getBulkPhotoPreviewImageController,
+  commitBulkPhotosForPropertyController,
+  commitAllBulkPhotosController,
+  cleanupBulkPhotoSessionController,
+} from "../../modules/properties/bulk-photo.controller";
+import { MAX_ZIP_SIZE_BYTES } from "../../modules/properties/bulk-photo.service";
+import multer from "multer";
+
+const uploadZipMiddleware = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: MAX_ZIP_SIZE_BYTES,
+    files: 1,
+  },
+});
+
+router.post(
+  "/properties/bulk-photos/inspect",
+  requireAdminAuth("properties.edit"),
+  uploadZipMiddleware.single("zipFile"),
+  inspectBulkPhotoZipController
+);
+router.get(
+  "/properties/bulk-photos/sessions/:sessionId/images/:fileId/preview",
+  requireAdminAuth("properties.read"),
+  getBulkPhotoPreviewImageController
+);
+router.post(
+  "/properties/bulk-photos/commit-property",
+  requireAdminAuth("properties.edit"),
+  commitBulkPhotosForPropertyController
+);
+router.post(
+  "/properties/bulk-photos/commit-all",
+  requireAdminAuth("properties.edit"),
+  commitAllBulkPhotosController
+);
+router.post(
+  "/properties/bulk-photos/cleanup",
+  requireAdminAuth("properties.edit"),
+  cleanupBulkPhotoSessionController
+);
+
 router.get("/visits", requireAdminAuth("visits.read"), getAdminVisitsQueue);
 router.patch("/visits/:id/status", requireAdminAuth("visits.manage"), updateAdminVisitStatus);
 

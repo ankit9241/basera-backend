@@ -59,6 +59,12 @@ enum FurnishedStatus {
   UNFURNISHED
 }
 
+enum DepositPolicy {
+  ONE_MONTH_RENT
+  FIXED_AMOUNT
+  CUSTOM
+}
+
 enum OwnerType {
   LANDLORD
   CARETAKER
@@ -208,6 +214,7 @@ model Property {
   rentMin             Int                       @default(0)
   rentMax             Int                       @default(0)
   depositAmount       Decimal                   @default(0) @db.Decimal(10, 2)
+  depositPolicy       DepositPolicy?
   singleRoomRent      Decimal?                  @db.Decimal(10, 2)
   doubleRoomRent      Decimal?                  @db.Decimal(10, 2)
   tripleRoomRent      Decimal?                  @db.Decimal(10, 2)

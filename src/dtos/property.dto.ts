@@ -12,6 +12,7 @@ export interface PublicPropertyDTO {
   rentMin: number;
   rentMax: number;
   depositAmount: number;
+  depositPolicy?: string | null;
   singleRoomRent?: number | null;
   doubleRoomRent?: number | null;
   tripleRoomRent?: number | null;
@@ -123,6 +124,7 @@ export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicProperty
     rentMin: prop.rentMin,
     rentMax: prop.rentMax,
     depositAmount: depositNum,
+    depositPolicy: prop.depositPolicy || null,
     singleRoomRent: singleRent,
     doubleRoomRent: doubleRent,
     tripleRoomRent: tripleRent,

@@ -1,10 +1,17 @@
 import { ApiError } from "../../middleware/error-handler";
 
-export const ALLOWED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"] as const;
+export const ALLOWED_MIME_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+] as const;
 export type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number];
 
 export const MAX_FILE_SIZE_BYTES =
-  Number(process.env.MAX_IMAGE_SIZE_BYTES) || 10 * 1024 * 1024; // 10MB default
+  Number(process.env.MAX_IMAGE_SIZE_BYTES) || 15 * 1024 * 1024; // 15MB default
 export const MAX_IMAGES_PER_UPLOAD =
   Number(process.env.MAX_IMAGES_PER_UPLOAD) || 10;
 
@@ -12,9 +19,19 @@ export const MAX_IMAGES_PER_UPLOAD =
  * Validates file buffer header magic numbers to ensure actual binary matches safe image formats.
  * Prevents disguised executable / script / SVG uploads.
  */
-export function validateImageMagicBytes(buffer: Buffer): { isValid: boolean; detectedMime?: string } {
-  if (!buffer || buffer.length < 12) {
+export function validateImageMagicBytes(buffer: Buffer): {
+  isValid: boolean;
+  detectedMime?: string;
+  isSvg?: boolean;
+} {
+  if (!buffer || buffer.length < 8) {
     return { isValid: false };
+  }
+
+  // Check for SVG: text header containing <svg or <?xml ... <svg
+  const snippet = buffer.subarray(0, Math.min(buffer.length, 1024)).toString("utf8").toLowerCase();
+  if (snippet.includes("<svg") || snippet.includes("xmlns=\"http://www.w3.org/2000/svg\"")) {
+    return { isValid: false, isSvg: true };
   }
 
   // JPEG: FF D8 FF
@@ -24,6 +41,7 @@ export function validateImageMagicBytes(buffer: Buffer): { isValid: boolean; det
 
   // PNG: 89 50 4E 47 0D 0A 1A 0A
   if (
+    buffer.length >= 8 &&
     buffer[0] === 0x89 &&
     buffer[1] === 0x50 &&
     buffer[2] === 0x4e &&
@@ -38,6 +56,7 @@ export function validateImageMagicBytes(buffer: Buffer): { isValid: boolean; det
 
   // WebP: RIFF (4 bytes) + file size (4 bytes) + WEBP (4 bytes)
   if (
+    buffer.length >= 12 &&
     buffer[0] === 0x52 &&
     buffer[1] === 0x49 &&
     buffer[2] === 0x46 &&
@@ -48,6 +67,17 @@ export function validateImageMagicBytes(buffer: Buffer): { isValid: boolean; det
     buffer[11] === 0x50
   ) {
     return { isValid: true, detectedMime: "image/webp" };
+  }
+
+  // HEIC / HEIF: ISOBMFF box with 'ftyp' at offset 4 and compatible brand at offset 8
+  if (
+    buffer.length >= 12 &&
+    buffer.toString("ascii", 4, 8) === "ftyp"
+  ) {
+    const brand = buffer.toString("ascii", 8, 12).toLowerCase();
+    if (["heic", "heix", "hevc", "hevx", "mif1", "msf1", "heis"].includes(brand)) {
+      return { isValid: true, detectedMime: "image/heic" };
+    }
   }
 
   return { isValid: false };
@@ -62,7 +92,7 @@ export function sanitizeImageFilename(
   index: number = 0
 ): string {
   const ext = originalName.split(".").pop()?.toLowerCase() || "jpg";
-  const safeExt = ext === "jpeg" ? "jpg" : ext;
+  const safeExt = ext === "jpeg" ? "jpg" : ext === "heif" ? "heic" : ext;
   const cleanCode = propertyCode.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
   const timestamp = Date.now();
   const randomSuffix = Math.random().toString(36).substring(2, 6);
@@ -85,14 +115,23 @@ export function validateImageFile(file: {
   }
 
   const normalizedMime = file.mimetype.toLowerCase();
-  if (!ALLOWED_MIME_TYPES.includes(normalizedMime as any)) {
+
+  // Explicit SVG check
+  if (normalizedMime.includes("svg") || file.originalname.toLowerCase().endsWith(".svg")) {
     throw new ApiError(
       400,
-      `Unsupported file format for "${file.originalname}". Only JPEG, PNG, and WebP images are permitted. SVG is strictly disallowed.`
+      `SVG format is strictly prohibited for "${file.originalname}". Only JPG, PNG, WebP, and HEIC photographs are permitted.`
     );
   }
 
   const magicCheck = validateImageMagicBytes(file.buffer);
+  if (magicCheck.isSvg) {
+    throw new ApiError(
+      400,
+      `SVG format is strictly prohibited for "${file.originalname}". Only JPG, PNG, WebP, and HEIC photographs are permitted.`
+    );
+  }
+
   if (!magicCheck.isValid) {
     throw new ApiError(
       400,

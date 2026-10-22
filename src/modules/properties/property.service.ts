@@ -10,6 +10,7 @@ import {
   AvailabilityStatus,
   VerificationStatus,
   PropertyLifecycle,
+  DepositPolicy,
 } from "@prisma/client";
 import { ApiError } from "../../middleware/error-handler";
 import {
@@ -635,6 +636,7 @@ export async function updateAdminPropertyService(
     area: string | null;
     exactAddress: string;
     depositAmount: number;
+    depositPolicy?: DepositPolicy | null;
     singleRoomRent: number | null;
     doubleRoomRent: number | null;
     tripleRoomRent: number | null;
@@ -747,6 +749,9 @@ export async function updateAdminPropertyService(
 
   if (data.depositAmount !== undefined) {
     updateData.depositAmount = new Prisma.Decimal(data.depositAmount);
+  }
+  if (data.depositPolicy !== undefined) {
+    updateData.depositPolicy = data.depositPolicy;
   }
   if (data.singleRoomRent !== undefined) {
     updateData.singleRoomRent = data.singleRoomRent !== null ? new Prisma.Decimal(data.singleRoomRent) : null;

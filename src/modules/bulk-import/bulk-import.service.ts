@@ -11,6 +11,7 @@ import {
   OwnerType,
   AvailabilityStatus,
   VerificationStatus,
+  DepositPolicy,
 } from "@prisma/client";
 import { parseCsvDetailed, resolveCanonicalHeader } from "./csv-parser";
 
@@ -52,6 +53,22 @@ function cleanNumericAmount(
   s = s.replace(/\s+/g, ""); // Remove whitespace e.g. 15 000 -> 15000
 
   if (s === "") {
+    return { value: options.defaultValue !== undefined ? options.defaultValue : null };
+  }
+
+  const upper = s.toUpperCase();
+  if (
+    upper === "NA" ||
+    upper === "N.A." ||
+    upper === "N/A" ||
+    upper === "NOT APPLICABLE" ||
+    upper === "NOTAPPLICABLE" ||
+    upper === "-" ||
+    upper === "--" ||
+    upper === "NONE" ||
+    upper === "NIL" ||
+    upper === "NULL"
+  ) {
     return { value: options.defaultValue !== undefined ? options.defaultValue : null };
   }
 
@@ -283,6 +300,7 @@ export interface ParsedBulkRow {
   area: string;
   exactAddress: string;
   depositAmount: number;
+  depositPolicy?: DepositPolicy | null;
   singleRoomRent: number | null;
   doubleRoomRent: number | null;
   tripleRoomRent: number | null;
@@ -362,7 +380,12 @@ function diffPropertyFields(existing: any, incoming: ParsedBulkRow): RowChange[]
   check("Gender", existing.gender, incoming.gender);
   check("Area", existing.area || existing.localityZone, incoming.area);
   check("Exact Address", existing.exactAddress, incoming.exactAddress);
-  check("Deposit Amount", existing.depositAmount ? Number(existing.depositAmount) : 0, incoming.depositAmount);
+  if (incoming.depositPolicy) {
+    check("Deposit Policy", existing.depositPolicy, incoming.depositPolicy);
+  }
+  if (incoming.depositAmount > 0) {
+    check("Deposit Amount", existing.depositAmount ? Number(existing.depositAmount) : 0, incoming.depositAmount);
+  }
   check("Single Room Rent", existing.singleRoomRent ? Number(existing.singleRoomRent) : null, incoming.singleRoomRent);
   check("Double Room Rent", existing.doubleRoomRent ? Number(existing.doubleRoomRent) : null, incoming.doubleRoomRent);
   check("Triple Room Rent", existing.tripleRoomRent ? Number(existing.tripleRoomRent) : null, incoming.tripleRoomRent);
@@ -415,8 +438,8 @@ export async function processBulkPropertyRows(
     const rowNum = idx + 2; // 1-indexed header is row 1
     const norm = normalizeRawRow(raw);
 
-    // 1. Listing ID / Property Code
-    const rawCode = (norm.listingid || norm.propertycode || "") as string;
+    // 1. Listing ID / Property Code / PG_ID
+    const rawCode = (norm.listingid || norm.propertycode || norm.pgid || norm.id || "") as string;
     const propertyCode = rawCode ? rawCode.trim().toUpperCase() : undefined;
 
     if (propertyCode) {
@@ -483,9 +506,33 @@ export async function processBulkPropertyRows(
     const verifRes = normalizeVerificationStatus(norm.verificationstatus);
     if (verifRes.error) errors.push({ row: rowNum, field: "Verification Status", message: verifRes.error });
 
-    // 5. Numeric Fields
-    const depositClean = cleanNumericAmount(norm.depositamount, "Deposit Amount", { defaultValue: 0 });
-    if (depositClean.error) errors.push({ row: rowNum, field: "Deposit Amount", message: depositClean.error });
+    // 5. Deposit Handling (Non-required, supports "1 month rent" / dynamic deposit without numeric errors)
+    let depositCleanValue = 0;
+    let detectedDepositPolicy: DepositPolicy | null = null;
+
+    const rawPolicy = String(norm.depositpolicy || "").trim().toUpperCase();
+    if (rawPolicy === "ONE_MONTH_RENT" || rawPolicy.includes("1 MONTH")) {
+      detectedDepositPolicy = DepositPolicy.ONE_MONTH_RENT;
+    } else if (rawPolicy === "FIXED_AMOUNT" || rawPolicy.includes("FIXED")) {
+      detectedDepositPolicy = DepositPolicy.FIXED_AMOUNT;
+    } else if (rawPolicy === "CUSTOM") {
+      detectedDepositPolicy = DepositPolicy.CUSTOM;
+    }
+
+    if (norm.depositamount) {
+      const rawDep = String(norm.depositamount).trim().toLowerCase();
+      if (rawDep.includes("1 month") || rawDep.includes("one month") || rawDep.includes("one_month")) {
+        detectedDepositPolicy = DepositPolicy.ONE_MONTH_RENT;
+      } else {
+        const cleaned = cleanNumericAmount(norm.depositamount, "Deposit Amount", { defaultValue: 0 });
+        if (!cleaned.error && cleaned.value !== null && cleaned.value > 0) {
+          depositCleanValue = cleaned.value;
+          if (!detectedDepositPolicy) {
+            detectedDepositPolicy = DepositPolicy.FIXED_AMOUNT;
+          }
+        }
+      }
+    }
 
     const singleRentClean = cleanNumericAmount(norm.singleroomrent, "Single Room Rent");
     if (singleRentClean.error) errors.push({ row: rowNum, field: "Single Room Rent", message: singleRentClean.error });
@@ -517,23 +564,30 @@ export async function processBulkPropertyRows(
 
     // 6. Amenities (Array)
     let amenities: string[] = [];
-    if (norm.amenities) {
-      if (Array.isArray(norm.amenities)) {
-        amenities = norm.amenities.map(String).map((s) => s.trim()).filter(Boolean);
+    const rawAmenities = norm.amenities || norm.amenity || norm.facilities;
+    if (rawAmenities) {
+      if (Array.isArray(rawAmenities)) {
+        amenities = rawAmenities.map(String).map((s) => s.trim()).filter(Boolean);
       } else {
-        amenities = String(norm.amenities).split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+        amenities = String(rawAmenities)
+          .split(/[,\n;|]/)
+          .map((s) => s.trim())
+          .filter((s) => s && s.toUpperCase() !== "N/A" && s.toUpperCase() !== "NA" && s !== "-");
       }
     }
     amenities = Array.from(new Set(amenities)); // deduplicate
 
     // 7. House Rules (Array)
     let rules: string[] = [];
-    const rawRules = norm.houserules || norm.rules;
+    const rawRules = norm.houserules || norm.rules || norm.rule;
     if (rawRules) {
       if (Array.isArray(rawRules)) {
         rules = rawRules.map(String).map((s) => s.trim()).filter(Boolean);
       } else {
-        rules = String(rawRules).split(/[\n,;]/).map((s) => s.trim()).filter(Boolean);
+        rules = String(rawRules)
+          .split(/[,\n;|]/)
+          .map((s) => s.trim())
+          .filter((s) => s && s.toUpperCase() !== "N/A" && s.toUpperCase() !== "NA" && s !== "-");
       }
     }
     rules = Array.from(new Set(rules)); // deduplicate
@@ -549,15 +603,15 @@ export async function processBulkPropertyRows(
       (r): r is number => typeof r === "number" && r > 0
     );
     const rentMin = norm.rentmin
-      ? cleanNumericAmount(norm.rentmin, "Rent Min").value || 10000
+      ? cleanNumericAmount(norm.rentmin, "Rent Min").value || (rents.length > 0 ? Math.min(...rents) : 0)
       : rents.length > 0
       ? Math.min(...rents)
-      : 10000;
+      : 0;
     const rentMax = norm.rentmax
-      ? cleanNumericAmount(norm.rentmax, "Rent Max").value || 15000
+      ? cleanNumericAmount(norm.rentmax, "Rent Max").value || (rents.length > 0 ? Math.max(...rents) : 0)
       : rents.length > 0
       ? Math.max(...rents)
-      : 15000;
+      : 0;
 
     const description =
       (norm.description as string) ||
@@ -570,7 +624,8 @@ export async function processBulkPropertyRows(
       gender: genderRes.value,
       area,
       exactAddress,
-      depositAmount: depositClean.value ?? 0,
+      depositAmount: depositCleanValue,
+      depositPolicy: detectedDepositPolicy,
       singleRoomRent: singleRentClean.value,
       doubleRoomRent: doubleRentClean.value,
       tripleRoomRent: tripleRentClean.value,
@@ -581,8 +636,8 @@ export async function processBulkPropertyRows(
       otherCharges: otherChargesClean.value,
       availableRooms: roomsClean.value ?? 1,
       furnishedStatus: furnishedRes.value,
-      amenities: amenities.length ? amenities : ["Wi-Fi", "Housekeeping"],
-      rules: rules.length ? rules : ["Entry till 11:00 PM", "No smoking"],
+      amenities,
+      rules,
       ownerName: ownerName?.trim() || null,
       ownerPhone: ownerPhone?.trim() || null,
       ownerType: ownerTypeRes.value,
@@ -612,15 +667,18 @@ export async function processBulkPropertyRows(
 
   const existingMap = new Map(existingProperties.map((p) => [p.propertyCode, p]));
 
-  // Auto-generation counter for properties without codes
-  const lastProperty = await prisma.property.findFirst({
-    orderBy: { createdAt: "desc" },
+  // Auto-generation counter for properties without codes (starting at BAS500 for this dataset)
+  const basProperties = await prisma.property.findMany({
+    where: { propertyCode: { startsWith: "BAS", mode: "insensitive" } },
     select: { propertyCode: true },
   });
-  let currentNum = 100;
-  if (lastProperty?.propertyCode) {
-    const match = lastProperty.propertyCode.match(/\d+/);
-    if (match) currentNum = Math.max(currentNum, parseInt(match[0]!, 10));
+  let nextBasNum = 500;
+  for (const bp of basProperties) {
+    const match = bp.propertyCode.match(/BAS(\d+)/i);
+    if (match) {
+      const n = parseInt(match[1]!, 10);
+      if (n >= nextBasNum) nextBasNum = n + 1;
+    }
   }
 
   // Pre-classify rows into NEW, UPDATE, UNCHANGED, or ERROR
@@ -691,8 +749,8 @@ export async function processBulkPropertyRows(
       newCount++;
       let code = item.propertyCode;
       if (!code) {
-        currentNum += 1;
-        code = `PF#${currentNum}`;
+        code = `BAS${nextBasNum}`;
+        nextBasNum += 1;
       }
       rowActions.push({
         row: rowNum,
@@ -729,42 +787,53 @@ export async function processBulkPropertyRows(
             const isVerifiedBool = item.verificationStatus === VerificationStatus.VERIFIED;
 
             if (action === "NEW") {
-              const safeCodeNum = code.replace(/[^0-9]/g, "") || String(currentNum);
-              const slug = `pf-${safeCodeNum}-${item.area.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+              const cleanCode = code.replace(/[^0-9a-zA-Z]/g, "-").toLowerCase().replace(/^-+|-+$/g, "");
+              const cleanArea = item.area.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+              const slug = `${cleanCode}-${cleanArea}`;
 
               const roomsToCreate: Prisma.RoomInventoryCreateWithoutPropertyInput[] = [];
 
+              const calcDeposit = (rent: number) => {
+                if (item.depositPolicy === DepositPolicy.ONE_MONTH_RENT) {
+                  return rent;
+                }
+                return item.depositAmount > 0 ? item.depositAmount : 0;
+              };
+
               if (item.singleRoomRent) {
+                const sRent = Math.round(Number(item.singleRoomRent));
                 roomsToCreate.push({
                   label: "Single room",
                   sharingType: SharingType.SINGLE,
                   occupancyText: "1 student",
-                  rent: Math.round(Number(item.singleRoomRent)),
-                  deposit: Math.round(Number(item.singleRoomRent) * 1.5),
+                  rent: sRent,
+                  deposit: calcDeposit(sRent),
                   totalUnits: 4,
                   availableUnits: Math.max(1, Math.min(item.availableRooms ?? 1, 2)),
                 });
               }
 
               if (item.doubleRoomRent) {
+                const dRent = Math.round(Number(item.doubleRoomRent));
                 roomsToCreate.push({
                   label: "Double sharing",
                   sharingType: SharingType.DOUBLE,
                   occupancyText: "2 students",
-                  rent: Math.round(Number(item.doubleRoomRent)),
-                  deposit: Math.round(Number(item.doubleRoomRent) * 1.5),
+                  rent: dRent,
+                  deposit: calcDeposit(dRent),
                   totalUnits: 6,
                   availableUnits: Math.max(1, Math.min(item.availableRooms ?? 1, 3)),
                 });
               }
 
               if (item.tripleRoomRent) {
+                const tRent = Math.round(Number(item.tripleRoomRent));
                 roomsToCreate.push({
                   label: "Triple sharing",
                   sharingType: SharingType.TRIPLE,
                   occupancyText: "3 students",
-                  rent: Math.round(Number(item.tripleRoomRent)),
-                  deposit: Math.round(Number(item.tripleRoomRent) * 1.5),
+                  rent: tRent,
+                  deposit: calcDeposit(tRent),
                   totalUnits: 4,
                   availableUnits: 1,
                 });
@@ -781,6 +850,7 @@ export async function processBulkPropertyRows(
                 rentMin: item.rentMin,
                 rentMax: item.rentMax,
                 depositAmount: item.depositAmount,
+                depositPolicy: item.depositPolicy || undefined,
                 singleRoomRent: item.singleRoomRent,
                 doubleRoomRent: item.doubleRoomRent,
                 tripleRoomRent: item.tripleRoomRent,
@@ -820,7 +890,8 @@ export async function processBulkPropertyRows(
                 localityZone: item.area,
                 area: item.area,
                 exactAddress: item.exactAddress,
-                depositAmount: item.depositAmount,
+                depositAmount: item.depositAmount > 0 ? item.depositAmount : existing.depositAmount,
+                depositPolicy: item.depositPolicy !== undefined ? item.depositPolicy : existing.depositPolicy,
                 singleRoomRent: item.singleRoomRent,
                 doubleRoomRent: item.doubleRoomRent,
                 tripleRoomRent: item.tripleRoomRent,
@@ -866,7 +937,14 @@ export async function processBulkPropertyRows(
                 const roomMatch = existingRooms.find((r) => r.sharingType === sharingType);
                 if (rentVal !== null && rentVal > 0) {
                   const rent = Math.round(rentVal);
-                  const deposit = Math.round(rentVal * 1.5);
+                  const deposit =
+                    item.depositPolicy === DepositPolicy.ONE_MONTH_RENT
+                      ? rent
+                      : item.depositAmount > 0
+                      ? item.depositAmount
+                      : existing.depositPolicy === DepositPolicy.ONE_MONTH_RENT
+                      ? rent
+                      : roomMatch?.deposit ?? 0;
                   if (roomMatch) {
                     await tx.roomInventory.update({
                       where: { id: roomMatch.id },
