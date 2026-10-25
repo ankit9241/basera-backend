@@ -54,7 +54,32 @@ export function getBulkPhotoPreviewImageController(
     }
 
     const { filePath, mimeType } = getPreviewImage(sessionId, fileId);
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+
+    // Support HTTP Range requests for MP4 video streaming & scrubbing
+    if (mimeType.startsWith("video/") && req.headers.range) {
+      const range = req.headers.range;
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunksize = end - start + 1;
+
+      res.writeHead(206, {
+        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunksize,
+        "Content-Type": mimeType,
+      });
+
+      const stream = fs.createReadStream(filePath, { start, end });
+      stream.pipe(res);
+      return;
+    }
+
     res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Length", fileSize);
+    res.setHeader("Accept-Ranges", "bytes");
     res.setHeader("Cache-Control", "private, max-age=3600");
     const stream = fs.createReadStream(filePath);
     stream.pipe(res);

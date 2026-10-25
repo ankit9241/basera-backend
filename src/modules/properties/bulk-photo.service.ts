@@ -10,6 +10,7 @@ import {
   validateImageMagicBytes,
   sanitizeImageFilename,
   MAX_FILE_SIZE_BYTES,
+  MAX_VIDEO_SIZE_BYTES,
 } from "../../lib/storage/image.validator";
 import {
   BulkPhotoItem,
@@ -22,11 +23,11 @@ import {
   PhotoValidationStatus,
 } from "./bulk-photo.types";
 
-// Configurable archive limits
+// Configurable archive limits (generous thresholds to accommodate MP4 videos)
 export const MAX_ZIP_SIZE_BYTES =
-  Number(process.env.MAX_ZIP_SIZE_BYTES) || 150 * 1024 * 1024; // 150MB
+  Number(process.env.MAX_ZIP_SIZE_BYTES) || 300 * 1024 * 1024; // 300MB
 export const MAX_DECOMPRESSED_SIZE_BYTES =
-  Number(process.env.MAX_ZIP_DECOMPRESSED_SIZE_BYTES) || 400 * 1024 * 1024; // 400MB
+  Number(process.env.MAX_ZIP_DECOMPRESSED_SIZE_BYTES) || 800 * 1024 * 1024; // 800MB
 export const MAX_ZIP_ENTRIES =
   Number(process.env.MAX_ZIP_ENTRIES) || 1000;
 
@@ -38,6 +39,7 @@ interface StoredPhotoFile {
   propertyId?: string;
   size: number;
   mimeType: string;
+  mediaType: "image" | "video";
   tempFilePath: string;
   convertedJpgPath?: string;
   status: PhotoValidationStatus;
@@ -266,19 +268,26 @@ export async function inspectZipArchive(
     let errorMessage: string | undefined;
     let convertedJpgPath: string | undefined;
 
-    // Check size limit
-    if (fileBuffer.length > MAX_FILE_SIZE_BYTES) {
+    const isMp4 = filename.toLowerCase().endsWith(".mp4") || filename.toLowerCase().endsWith(".m4v");
+    const maxAllowedSize = isMp4 ? MAX_VIDEO_SIZE_BYTES : MAX_FILE_SIZE_BYTES;
+
+    // Check size limit (100MB for MP4 videos, 15MB for photos)
+    if (fileBuffer.length > maxAllowedSize) {
       status = "OVERSIZED";
-      errorMessage = `File size ${(fileBuffer.length / (1024 * 1024)).toFixed(1)}MB exceeds ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB limit.`;
+      const limitMB = (maxAllowedSize / (1024 * 1024)).toFixed(0);
+      errorMessage = `File size ${(fileBuffer.length / (1024 * 1024)).toFixed(1)}MB exceeds ${limitMB}MB limit for ${isMp4 ? "videos" : "photos"}.`;
     } else {
       // Check magic bytes & SVG rejection
       const magicCheck = validateImageMagicBytes(fileBuffer);
       if (magicCheck.isSvg || filename.toLowerCase().endsWith(".svg")) {
         status = "SVG_REJECTED";
-        errorMessage = "SVG photographs are strictly disallowed. Only JPG, PNG, WebP, and HEIC are permitted.";
+        errorMessage = "SVG format is strictly disallowed. Only JPG, PNG, WebP, HEIC photos, and MP4 videos are permitted.";
+      } else if (magicCheck.isVideo || isMp4) {
+        status = "VALID";
+        detectedMime = "video/mp4";
       } else if (!magicCheck.isValid) {
         status = "CORRUPTED";
-        errorMessage = "File contents do not match genuine image binary data (unsupported or corrupted format).";
+        errorMessage = "File contents do not match genuine photo or MP4 video binary data (unsupported format).";
       } else {
         detectedMime = magicCheck.detectedMime || "image/jpeg";
         // If HEIC / HEIF, attempt conversion to JPEG preview for browser display
@@ -300,6 +309,8 @@ export async function inspectZipArchive(
       }
     }
 
+    const isVideo = detectedMime === "video/mp4" || isMp4;
+    const mediaType: "image" | "video" = isVideo ? "video" : "image";
     const previewUrl = `/api/v1/admin/properties/bulk-photos/sessions/${sessionId}/images/${fileId}/preview`;
 
     const photoItem: BulkPhotoItem = {
@@ -308,6 +319,7 @@ export async function inspectZipArchive(
       entryPath: rawPath,
       size: fileBuffer.length,
       mimeType: detectedMime,
+      mediaType,
       thumbnailDataUrl: previewUrl,
       status,
       error: errorMessage,
@@ -322,6 +334,7 @@ export async function inspectZipArchive(
       propertyCode: folderName.toUpperCase(),
       size: fileBuffer.length,
       mimeType: detectedMime,
+      mediaType,
       tempFilePath,
       convertedJpgPath,
       status,
@@ -361,10 +374,12 @@ export async function inspectZipArchive(
     // Sort files deterministically (natural alphabetical sort by filename)
     data.files.sort((a, b) => naturalFilenameSort(a.originalFilename, b.originalFilename));
 
-    // Designate first valid photo as default cover candidate if property has no existing photos
-    const firstValid = data.files.find((f) => f.status === "VALID");
-    if (firstValid && (!matchedProp?.media || matchedProp.media.length === 0)) {
-      firstValid.isCoverCandidate = true;
+    // Designate first valid still photo as default cover candidate (not a video)
+    const firstValidStillPhoto = data.files.find((f) => f.status === "VALID" && f.mediaType !== "video");
+    const fallbackValid = data.files.find((f) => f.status === "VALID");
+    const coverChoice = firstValidStillPhoto || fallbackValid;
+    if (coverChoice && (!matchedProp?.media || matchedProp.media.length === 0)) {
+      coverChoice.isCoverCandidate = true;
     }
 
     const validCount = data.files.filter((f) => f.status === "VALID").length;
@@ -553,6 +568,7 @@ export async function commitPropertyPhotos(
       uploadedImages.push({
         id: file.uploadedMediaId,
         mediaUrl: file.uploadedUrl,
+        mediaType: file.mediaType || "image",
         isPrimary: false,
         displayOrder: nextOrder++,
         originalFilename: file.originalFilename,
@@ -567,6 +583,11 @@ export async function commitPropertyPhotos(
       let uploadMime = file.mimeType;
       let safeFilename: string;
 
+      const isVideo =
+        file.mediaType === "video" ||
+        file.mimeType === "video/mp4" ||
+        file.originalFilename.toLowerCase().endsWith(".mp4");
+
       if (file.convertedJpgPath && fs.existsSync(file.convertedJpgPath)) {
         uploadBuffer = fs.readFileSync(file.convertedJpgPath);
         uploadMime = "image/jpeg";
@@ -576,20 +597,29 @@ export async function commitPropertyPhotos(
         safeFilename = sanitizeImageFilename(file.originalFilename, property.propertyCode, i);
       }
 
-      console.log(`[BulkPhoto] Uploading "${file.originalFilename}" to ImageKit for ${property.propertyCode}...`);
+      console.log(`[BulkPhoto] Uploading "${file.originalFilename}" (${isVideo ? "video/mp4" : uploadMime}) to ImageKit for ${property.propertyCode}...`);
+      const uploadTags = isVideo
+        ? ["property", cleanCode, `pid_${property.id}`, "bulk_upload", "video", "walkthrough"]
+        : ["property", cleanCode, `pid_${property.id}`, "bulk_upload", "photo"];
+
       const uploadResult = await storage.upload({
         buffer: uploadBuffer,
         fileName: safeFilename,
         folder,
         mimeType: uploadMime,
-        tags: ["property", cleanCode, `pid_${property.id}`, "bulk_upload"],
+        tags: uploadTags,
       });
 
       // Cover determination:
       // 1. Explicit admin choice via options.coverImageId
-      // 2. Or, if property has NO existing primary image and none assigned yet, first uploaded image becomes primary
+      // 2. Or, if property has NO existing primary image and none assigned yet, first uploaded STILL PHOTO becomes primary
       const isDesignatedCover = options.coverImageId === file.id;
-      const isDefaultCover = !existingPrimary && uploadedImages.every((img) => !img.isPrimary) && i === 0;
+      const firstStillIndex = eligibleFiles.findIndex((f) => f.mediaType !== "video");
+      const isDefaultCover =
+        !existingPrimary &&
+        !isVideo &&
+        uploadedImages.every((img) => !img.isPrimary) &&
+        firstStillIndex === i;
       const isPrimary = isDesignatedCover || isDefaultCover;
 
       // If this image is designated as primary and there was an existing primary, demote the old primary
@@ -604,12 +634,12 @@ export async function commitPropertyPhotos(
         data: {
           propertyId: property.id,
           mediaUrl: uploadResult.url,
-          mediaType: "image",
+          mediaType: isVideo ? "video" : "image",
           storageProvider: uploadResult.provider,
           storageKey: uploadResult.fileId,
           displayOrder: nextOrder++,
           isPrimary,
-          altText: `${property.publicName} photo - ${file.originalFilename}`,
+          altText: `${property.publicName} ${isVideo ? "walkthrough video" : "photo"} - ${file.originalFilename}`,
           width: uploadResult.width,
           height: uploadResult.height,
           fileSize: uploadResult.size,
@@ -622,6 +652,7 @@ export async function commitPropertyPhotos(
       uploadedImages.push({
         id: mediaRecord.id,
         mediaUrl: mediaRecord.mediaUrl,
+        mediaType: isVideo ? "video" : "image",
         isPrimary: mediaRecord.isPrimary,
         displayOrder: mediaRecord.displayOrder,
         originalFilename: file.originalFilename,

@@ -58,6 +58,7 @@ export interface PublicPropertyDTO {
     collegeId: string;
     collegeName: string;
     distanceMinutes: number;
+    walkingDistanceM?: number | null;
   }[];
 }
 
@@ -99,9 +100,59 @@ export type PropertyWithRelations = Property & {
   media?: PropertyMedia[];
   collegeDistances?: {
     distanceMinutes: number;
+    walkingDistanceM?: number | null;
     college: College;
   }[];
 };
+
+/**
+ * Formats verified college-distance records into standard comma-separated text
+ * e.g., "2 km from Hansraj College, 3 km from Miranda House"
+ */
+export function formatCollegeDistances(
+  records?: Array<{
+    college: { name: string; shortCode?: string };
+    distanceMinutes?: number | null;
+    walkingDistanceM?: number | null;
+  }> | null
+): string | null {
+  if (!records || records.length === 0) {
+    return null;
+  }
+
+  const parts = records
+    .map((record) => {
+      const collegeName = record.college?.name;
+      if (!collegeName) return null;
+      if (record.walkingDistanceM && record.walkingDistanceM > 0) {
+        if (record.walkingDistanceM >= 1000) {
+          const km = (record.walkingDistanceM / 1000).toFixed(1).replace(/\.0$/, "");
+          return `${km} km from ${collegeName}`;
+        }
+        return `${record.walkingDistanceM} m from ${collegeName}`;
+      }
+      if (record.distanceMinutes && record.distanceMinutes > 0) {
+        return `${record.distanceMinutes} min walk from ${collegeName}`;
+      }
+      return null;
+    })
+    .filter((text): text is string => Boolean(text));
+
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+function normalizeLocalityName(loc?: string | null): string {
+  if (!loc) return "";
+  const trimmed = loc.trim();
+  const unspaced = trimmed.toLowerCase().replace(/[\s-]+/g, "");
+  if (unspaced === "vijaynagar") return "Vijay Nagar";
+  return trimmed;
+}
+
+function normalizePublicListingTitle(title?: string | null): string {
+  if (!title) return "";
+  return title.replace(/\bVijaynagar\b/gi, "Vijay Nagar");
+}
 
 export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicPropertyDTO {
   const depositNum = prop.depositAmount ? Number(prop.depositAmount) : 0;
@@ -112,15 +163,22 @@ export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicProperty
   const electricityChargesNum = prop.electricityCharges ? Number(prop.electricityCharges) : null;
   const otherChargesNum = prop.otherCharges ? Number(prop.otherCharges) : null;
 
+  const verifiedDistanceText = formatCollegeDistances(prop.collegeDistances);
+  const verifiedMinMinutes = prop.collegeDistances?.length
+    ? Math.min(...prop.collegeDistances.map((cd) => cd.distanceMinutes).filter((m) => m > 0))
+    : 0;
+  const publicDistanceText = verifiedDistanceText || "College distances coming soon";
+  const publicDistanceMin = Number.isFinite(verifiedMinMinutes) && verifiedMinMinutes > 0 ? verifiedMinMinutes : 0;
+
   return {
     id: prop.id,
     propertyCode: prop.propertyCode,
     slug: prop.slug,
-    publicName: prop.publicName,
+    publicName: normalizePublicListingTitle(prop.publicName),
     type: prop.type,
     gender: prop.gender,
-    localityZone: prop.localityZone,
-    area: prop.area || prop.localityZone,
+    localityZone: normalizeLocalityName(prop.localityZone),
+    area: prop.area ? normalizeLocalityName(prop.area) : normalizeLocalityName(prop.localityZone),
     rentMin: prop.rentMin,
     rentMax: prop.rentMax,
     depositAmount: depositNum,
@@ -136,8 +194,8 @@ export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicProperty
     otherCharges: otherChargesNum,
     availableRooms: prop.availableRooms ?? (prop.rooms ? prop.rooms.reduce((acc, r) => acc + r.availableUnits, 0) : 1),
     furnishedStatus: prop.furnishedStatus || null,
-    distanceMin: prop.distanceMin,
-    distanceText: prop.distanceText,
+    distanceMin: publicDistanceMin,
+    distanceText: publicDistanceText,
     description: prop.description,
     rules: prop.rules,
     houseRules: prop.rules,
@@ -164,6 +222,7 @@ export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicProperty
       prop.media?.map((m) => ({
         id: m.id,
         mediaUrl: m.mediaUrl,
+        mediaType: m.mediaType ?? "image",
         isPrimary: m.isPrimary,
         displayOrder: m.displayOrder,
         altText: m.altText ?? null,
@@ -173,6 +232,7 @@ export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicProperty
         collegeId: cd.college.id,
         collegeName: cd.college.name,
         distanceMinutes: cd.distanceMinutes,
+        walkingDistanceM: cd.walkingDistanceM ?? null,
       })) ?? [],
   };
 }

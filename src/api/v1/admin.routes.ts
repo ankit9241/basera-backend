@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAdminAuth } from "../../middleware/auth";
+import { requireAdminAuth, optionalAdminAuth } from "../../middleware/auth";
 import {
   getAdminProperties,
   getAdminPropertyDetail,
@@ -110,7 +110,7 @@ router.post(
 );
 router.get(
   "/properties/bulk-photos/sessions/:sessionId/images/:fileId/preview",
-  requireAdminAuth("properties.read"),
+  optionalAdminAuth,
   getBulkPhotoPreviewImageController
 );
 router.post(

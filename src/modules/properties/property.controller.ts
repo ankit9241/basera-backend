@@ -6,6 +6,7 @@ import {
   getPublicPropertyBySlugOrCode,
   getAdminPropertyByIdOrCode,
   updateAdminPropertyService,
+  getLocalitySearchVariants,
 } from "./property.service";
 import { ApiError } from "../../middleware/error-handler";
 import { toAdminPropertyDTO } from "../../dtos/property.dto";
@@ -217,7 +218,14 @@ export async function getAdminProperties(
       where: {
         ...(status ? { lifecycleStatus: status as PropertyLifecycle } : {}),
         ...(verificationStatus ? { verificationStatus: verificationStatus as VerificationStatus } : {}),
-        ...(locality ? { localityZone: String(locality) } : {}),
+        ...(locality
+          ? {
+              OR: getLocalitySearchVariants(String(locality)).flatMap((variant) => [
+                { localityZone: { contains: variant, mode: "insensitive" } },
+                { area: { contains: variant, mode: "insensitive" } },
+              ]),
+            }
+          : {}),
         ...(searchTerm
           ? {
               OR: [

@@ -14,6 +14,7 @@ import {
   DepositPolicy,
 } from "@prisma/client";
 import { parseCsvDetailed, resolveCanonicalHeader } from "./csv-parser";
+import { generatePublicTitle } from "../../utils/property-title";
 
 /**
  * Normalizes an arbitrary object's keys to canonical keys via the alias resolver.
@@ -294,6 +295,7 @@ function normalizeElectricity(
 
 export interface ParsedBulkRow {
   propertyCode?: string;
+  internalPropertyName: string | null;
   publicName: string;
   type: PropertyType;
   gender: GenderCategory;
@@ -375,7 +377,8 @@ function diffPropertyFields(existing: any, incoming: ParsedBulkRow): RowChange[]
     }
   };
 
-  check("Public Name", existing.publicName, incoming.publicName);
+  check("Actual Property Name", existing.internalPropertyName, incoming.internalPropertyName);
+  check("Public Listing Title", existing.publicName, incoming.publicName);
   check("Listing Type", existing.type, incoming.type);
   check("Gender", existing.gender, incoming.gender);
   check("Area", existing.area || existing.localityZone, incoming.area);
@@ -455,13 +458,34 @@ export async function processBulkPropertyRows(
       }
     }
 
-    // 2. Public Name (Required)
-    const publicName = ((norm.publicname || norm.name || "") as string).trim();
-    if (!publicName || publicName.length < 2) {
+    // 2. Property Names: Actual Name (Confidential) & Public Listing Title
+    const actualName = (
+      (norm.actualpropertyname ||
+        norm.internalpropertyname ||
+        norm.propertyname ||
+        norm.pgname ||
+        norm.actualname ||
+        norm.internalname ||
+        norm.name ||
+        "") as string
+    ).trim();
+
+    const rawPublicTitle = (
+      (norm.publiclistingtitle ||
+        norm.publictitle ||
+        norm.publicname ||
+        norm.title ||
+        "") as string
+    ).trim();
+
+    // Fallback if user used legacy "Public Name" column for the actual PG name
+    const resolvedActualName = actualName || (norm.publicname ? String(norm.publicname).trim() : "");
+
+    if (!resolvedActualName || resolvedActualName.length < 2) {
       errors.push({
         row: rowNum,
-        field: "Public Name",
-        message: 'Public name is required and must be at least 2 characters.',
+        field: "Actual Property Name",
+        message: "Actual property name is required (min 2 characters).",
       });
     }
 
@@ -613,12 +637,31 @@ export async function processBulkPropertyRows(
       ? Math.max(...rents)
       : 0;
 
+    const generatedPublicTitle = generatePublicTitle(typeRes.value, genderRes.value, area);
+    const publicName =
+      rawPublicTitle && rawPublicTitle !== resolvedActualName
+        ? rawPublicTitle
+        : generatedPublicTitle;
+
+    const genderLabel =
+      genderRes.value === GenderCategory.GIRLS
+        ? "Girls"
+        : genderRes.value === GenderCategory.BOYS
+        ? "Boys"
+        : "Co-ed";
+    const typeLabel =
+      typeRes.value === PropertyType.PG
+        ? "PG"
+        : typeRes.value === PropertyType.FLAT
+        ? "flat"
+        : "co-living";
     const description =
       (norm.description as string) ||
-      `${publicName} is a verified ${typeRes.value} in ${area} tailored for Delhi University students.`;
+      `Verified ${genderLabel} ${typeLabel} in ${area} tailored for Delhi University students.`;
 
     const rowCandidate: ParsedBulkRow = {
       propertyCode,
+      internalPropertyName: resolvedActualName || null,
       publicName,
       type: typeRes.value,
       gender: genderRes.value,
@@ -842,6 +885,7 @@ export async function processBulkPropertyRows(
               const propertyData: Prisma.PropertyCreateInput = {
                 propertyCode: code,
                 slug,
+                internalPropertyName: item.internalPropertyName,
                 publicName: item.publicName,
                 type: item.type,
                 gender: item.gender,
@@ -874,8 +918,8 @@ export async function processBulkPropertyRows(
                 verifiedAt: isVerifiedBool ? new Date() : null,
                 lifecycleStatus: PropertyLifecycle.PUBLISHED,
                 exactAddress: item.exactAddress,
-                distanceMin: 5,
-                distanceText: `5 min to ${item.area} campus`,
+                distanceMin: 0,
+                distanceText: "College distances coming soon",
                 description: item.description,
                 ...(roomsToCreate.length > 0 ? { rooms: { create: roomsToCreate } } : {}),
               };
@@ -884,6 +928,7 @@ export async function processBulkPropertyRows(
               importedCodes.push(code);
             } else if (action === "UPDATE" && existing) {
               const updateData: Prisma.PropertyUpdateInput = {
+                internalPropertyName: item.internalPropertyName !== undefined ? item.internalPropertyName : existing.internalPropertyName,
                 publicName: item.publicName,
                 type: item.type,
                 gender: item.gender,

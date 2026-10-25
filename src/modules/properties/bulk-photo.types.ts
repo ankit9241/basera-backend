@@ -11,7 +11,8 @@ export interface BulkPhotoItem {
   entryPath: string;
   size: number;
   mimeType: string;
-  thumbnailDataUrl: string; // Base64 data URL for client preview
+  mediaType?: "image" | "video";
+  thumbnailDataUrl: string; // Base64 data URL or streaming URL for client preview
   status: PhotoValidationStatus;
   error?: string;
   isCoverCandidate?: boolean;
@@ -63,6 +64,7 @@ export interface BulkPhotoCommitPropertyResult {
   images: {
     id: string;
     mediaUrl: string;
+    mediaType?: "image" | "video";
     isPrimary: boolean;
     displayOrder: number;
     originalFilename: string;

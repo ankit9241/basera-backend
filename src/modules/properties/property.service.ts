@@ -80,6 +80,26 @@ export interface SearchPublicPropertiesResult {
   fallbackProperties?: PublicPropertyDTO[];
 }
 
+export function getLocalitySearchVariants(localityName: string): string[] {
+  const trimmed = localityName.trim();
+  const norm = trimmed.toLowerCase().replace(/[\s-]+/g, "");
+  const variants = [trimmed];
+
+  if (norm === "vijaynagar") {
+    variants.push("Vijay Nagar", "Vijaynagar", "vijay-nagar");
+  } else if (norm === "kamlanagar") {
+    variants.push("Kamla Nagar", "Kamlanagar", "kamla-nagar");
+  } else if (norm === "hudsonlane") {
+    variants.push("Hudson Lane", "Hudsonlane", "hudson-lane");
+  } else if (norm === "gtbnagar") {
+    variants.push("GTB Nagar", "GTBNagar", "gtb-nagar");
+  } else if (norm === "malkaganj" || norm === "malkaganjchowk") {
+    variants.push("Malkaganj", "Malka Ganj", "Malkaganj Chowk", "Malka Ganj Chowk");
+  }
+
+  return Array.from(new Set(variants));
+}
+
 export async function searchPublicProperties(filters: PropertyQueryFilters): Promise<SearchPublicPropertiesResult> {
   const limit = Math.min(filters.limit || 12, 50);
   const page = Math.max(filters.page || 1, 1);
@@ -195,14 +215,14 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
 
   const andConditions: Prisma.PropertyWhereInput[] = [];
 
-  // Locality / Area filter
+  // Locality / Area filter (with robust normalization for Vijay Nagar / Vijaynagar variants)
   if (effectiveLocality && effectiveLocality.trim()) {
-    const loc = effectiveLocality.trim();
+    const locVariants = getLocalitySearchVariants(effectiveLocality);
     andConditions.push({
-      OR: [
-        { localityZone: { contains: loc, mode: "insensitive" } },
-        { area: { contains: loc, mode: "insensitive" } },
-      ],
+      OR: locVariants.flatMap((variant) => [
+        { localityZone: { contains: variant, mode: "insensitive" } },
+        { area: { contains: variant, mode: "insensitive" } },
+      ]),
     });
   }
 
@@ -421,8 +441,15 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
       );
       if (match) {
         dto.distanceMin = match.distanceMinutes;
-        const meterText = match.walkingDistanceM ? `${match.walkingDistanceM}m` : `${match.distanceMinutes * 80}m`;
-        dto.distanceText = `${match.distanceMinutes} min (${meterText}) to ${match.college.name}`;
+        if (match.walkingDistanceM && match.walkingDistanceM > 0) {
+          const distStr =
+            match.walkingDistanceM >= 1000
+              ? `${(match.walkingDistanceM / 1000).toFixed(1).replace(/\.0$/, "")} km`
+              : `${match.walkingDistanceM} m`;
+          dto.distanceText = `${distStr} from ${match.college.name}`;
+        } else if (match.distanceMinutes > 0) {
+          dto.distanceText = `${match.distanceMinutes} min walk from ${match.college.name}`;
+        }
       }
     }
     return dto;
@@ -447,10 +474,10 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
           const count = await prisma.property.count({
             where: {
               lifecycleStatus: "PUBLISHED",
-              OR: [
-                { localityZone: { contains: def.canonicalName, mode: "insensitive" } },
-                { area: { contains: def.canonicalName, mode: "insensitive" } },
-              ],
+              OR: getLocalitySearchVariants(def.canonicalName).flatMap((variant) => [
+                { localityZone: { contains: variant, mode: "insensitive" } },
+                { area: { contains: variant, mode: "insensitive" } },
+              ]),
               ...(effectiveType ? { type: effectiveType as PropertyType } : {}),
               ...(effectiveGender ? { gender: effectiveGender as GenderCategory } : {}),
             },
@@ -467,10 +494,12 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
         const rawFallback = await prisma.property.findMany({
           where: {
             lifecycleStatus: "PUBLISHED",
-            OR: nearbyNames.flatMap((n) => [
-              { localityZone: { contains: n, mode: "insensitive" } },
-              { area: { contains: n, mode: "insensitive" } },
-            ]),
+            OR: nearbyNames.flatMap((n) =>
+              getLocalitySearchVariants(n).flatMap((variant) => [
+                { localityZone: { contains: variant, mode: "insensitive" } },
+                { area: { contains: variant, mode: "insensitive" } },
+              ])
+            ),
             ...(effectiveType ? { type: effectiveType as PropertyType } : {}),
             ...(effectiveGender ? { gender: effectiveGender as GenderCategory } : {}),
           },
@@ -510,20 +539,20 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
     normalizedQuery: parsedIntent?.normalizedQuery,
     inferredIntent: parsedIntent
       ? {
-          type: parsedIntent.inferredType,
-          gender: parsedIntent.inferredGender,
-          sharing: parsedIntent.inferredSharing,
-          budgetMin: parsedIntent.inferredBudgetMin,
-          budgetMax: parsedIntent.inferredBudgetMax,
-          locality: parsedIntent.inferredLocality || parsedIntent.unrecognizedLocality,
-        }
+        type: parsedIntent.inferredType,
+        gender: parsedIntent.inferredGender,
+        sharing: parsedIntent.inferredSharing,
+        budgetMin: parsedIntent.inferredBudgetMin,
+        budgetMax: parsedIntent.inferredBudgetMax,
+        locality: parsedIntent.inferredLocality || parsedIntent.unrecognizedLocality,
+      }
       : undefined,
     appliedLocality,
     suggestion: suggestedLocality
       ? {
-          locality: suggestedLocality,
-          text: suggestedLocality,
-        }
+        locality: suggestedLocality,
+        text: suggestedLocality,
+      }
       : undefined,
     zeroResultFallback,
   };
@@ -539,24 +568,82 @@ export async function searchPublicProperties(filters: PropertyQueryFilters): Pro
 }
 
 function normalizePropertyIdentifiers(idOrCode: string) {
-  let decoded = idOrCode;
+  let decoded = idOrCode.trim();
   try {
-    decoded = decodeURIComponent(idOrCode);
-  } catch {}
+    decoded = decodeURIComponent(idOrCode).trim();
+  } catch { }
 
-  const normalizedCode = decoded.toUpperCase().replace(/^PF-/, "PF#");
-  const unhyphenatedCode = decoded.toUpperCase().replace("-", "#");
-  const directHash =
-    decoded.toUpperCase().startsWith("PF") && !decoded.includes("#") && !decoded.includes("-")
-      ? `PF#${decoded.slice(2)}`
-      : decoded;
+  const upper = decoded.toUpperCase();
+  const lower = decoded.toLowerCase();
+
+  const codeCandidates = new Set<string>();
+  const slugCandidates = new Set<string>();
+
+  codeCandidates.add(upper);
+  codeCandidates.add(decoded);
+  slugCandidates.add(lower);
+  slugCandidates.add(decoded);
+
+  const basMatch = upper.match(/^(?:BAS(?:-PG)?[-#]?)(\d+)/i);
+  if (basMatch) {
+    const num = basMatch[1];
+    codeCandidates.add(`BAS-PG-${num}`);
+    codeCandidates.add(`BAS-${num}`);
+    codeCandidates.add(`BAS${num}`);
+    codeCandidates.add(`BAS#${num}`);
+    slugCandidates.add(`bas-pg-${num}`);
+  }
+
+  // Also check if idOrCode starts with a slug prefix like "bas-pg-501" or "bas-pg-512"
+  const slugBasMatch = lower.match(/^bas-pg-(\d+)(?:-.*)?$/);
+  if (slugBasMatch) {
+    const num = slugBasMatch[1];
+    codeCandidates.add(`BAS-PG-${num}`);
+    codeCandidates.add(`BAS-${num}`);
+    codeCandidates.add(`BAS${num}`);
+    codeCandidates.add(`BAS#${num}`);
+  }
+
+  // 2. PF code patterns (e.g. PF#101, PF-101, PF101)
+  const pfMatch = upper.match(/^PF[-#]?(\d+)/i);
+  if (pfMatch) {
+    const num = pfMatch[1];
+    codeCandidates.add(`PF#${num}`);
+    codeCandidates.add(`PF-${num}`);
+    codeCandidates.add(`PF${num}`);
+    slugCandidates.add(`pf-${num}`);
+  }
+
+  // 3. Slug hyphenation / unhyphenation variants
+  if (lower.includes("kamlanagar")) {
+    slugCandidates.add(lower.replace("kamlanagar", "kamla-nagar"));
+  } else if (lower.includes("kamla-nagar")) {
+    slugCandidates.add(lower.replace("kamla-nagar", "kamlanagar"));
+  }
+
+  if (lower.includes("vijaynagar")) {
+    slugCandidates.add(lower.replace("vijaynagar", "vijay-nagar"));
+  } else if (lower.includes("vijay-nagar")) {
+    slugCandidates.add(lower.replace("vijay-nagar", "vijaynagar"));
+  }
+
+  if (lower.includes("hudsonlane")) {
+    slugCandidates.add(lower.replace("hudsonlane", "hudson-lane"));
+  } else if (lower.includes("hudson-lane")) {
+    slugCandidates.add(lower.replace("hudson-lane", "hudsonlane"));
+  }
+
+  if (lower.includes("gtbnagar")) {
+    slugCandidates.add(lower.replace("gtbnagar", "gtb-nagar"));
+  } else if (lower.includes("gtb-nagar")) {
+    slugCandidates.add(lower.replace("gtb-nagar", "gtbnagar"));
+  }
 
   return {
     raw: idOrCode,
     decoded,
-    normalizedCode,
-    unhyphenatedCode,
-    directHash,
+    codeCandidates: Array.from(codeCandidates),
+    slugCandidates: Array.from(slugCandidates),
   };
 }
 
@@ -570,15 +657,8 @@ export async function getPublicPropertyBySlugOrCode(
       OR: [
         { id: ids.raw },
         { id: ids.decoded },
-        { slug: ids.raw.toLowerCase() },
-        { slug: ids.decoded.toLowerCase() },
-        { propertyCode: ids.normalizedCode },
-        { propertyCode: ids.unhyphenatedCode },
-        { propertyCode: ids.directHash },
-        { propertyCode: ids.raw },
-        { propertyCode: ids.raw.toUpperCase() },
-        { propertyCode: ids.decoded },
-        { propertyCode: ids.decoded.toUpperCase() },
+        { slug: { in: ids.slugCandidates, mode: "insensitive" } },
+        { propertyCode: { in: ids.codeCandidates, mode: "insensitive" } },
       ],
       lifecycleStatus: "PUBLISHED",
     },
@@ -603,15 +683,8 @@ export async function getAdminPropertyByIdOrCode(
       OR: [
         { id: ids.raw },
         { id: ids.decoded },
-        { slug: ids.raw.toLowerCase() },
-        { slug: ids.decoded.toLowerCase() },
-        { propertyCode: ids.normalizedCode },
-        { propertyCode: ids.unhyphenatedCode },
-        { propertyCode: ids.directHash },
-        { propertyCode: ids.raw },
-        { propertyCode: ids.raw.toUpperCase() },
-        { propertyCode: ids.decoded },
-        { propertyCode: ids.decoded.toUpperCase() },
+        { slug: { in: ids.slugCandidates, mode: "insensitive" } },
+        { propertyCode: { in: ids.codeCandidates, mode: "insensitive" } },
       ],
     },
     include: {

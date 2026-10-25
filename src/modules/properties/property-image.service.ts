@@ -117,17 +117,21 @@ export async function uploadPropertyImages(
 
       uploadedStorageKeys.push(uploadResult.fileId);
 
-      const isPrimary = isFirstImageOverall && i === 0;
+      const isVideo =
+        file.mimetype.toLowerCase() === "video/mp4" ||
+        file.originalname.toLowerCase().endsWith(".mp4");
+
+      const isPrimary = !isVideo && isFirstImageOverall && i === 0;
       const mediaRecord = await prisma.propertyMedia.create({
         data: {
           propertyId: property.id,
           mediaUrl: uploadResult.url,
-          mediaType: "image",
+          mediaType: isVideo ? "video" : "image",
           storageProvider: uploadResult.provider,
           storageKey: uploadResult.fileId,
           displayOrder: nextOrder++,
           isPrimary,
-          altText: altText || `${property.publicName} photo ${nextOrder}`,
+          altText: altText || `${property.publicName} ${isVideo ? "video" : "photo"} ${nextOrder}`,
           width: uploadResult.width,
           height: uploadResult.height,
           fileSize: uploadResult.size,

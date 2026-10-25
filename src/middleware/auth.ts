@@ -91,9 +91,11 @@ export async function optionalStudentAuth(
 
 export function requireAdminAuth(requiredPermission?: string) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const queryToken = typeof req.query?.token === "string" ? req.query.token : undefined;
     const token =
       req.cookies?.[ADMIN_COOKIE_NAME] ||
-      req.headers.authorization?.replace(/^Bearer\s+/i, "");
+      req.headers.authorization?.replace(/^Bearer\s+/i, "") ||
+      queryToken;
 
     if (!token) {
       next(new ApiError(401, "Admin authentication required. Access denied."));
@@ -152,9 +154,11 @@ export async function optionalAdminAuth(
   _res: Response,
   next: NextFunction
 ): Promise<void> {
+  const queryToken = typeof req.query?.token === "string" ? req.query.token : undefined;
   const token =
     req.cookies?.[ADMIN_COOKIE_NAME] ||
-    req.headers.authorization?.replace(/^Bearer\s+/i, "");
+    req.headers.authorization?.replace(/^Bearer\s+/i, "") ||
+    queryToken;
 
   if (!token) {
     next();

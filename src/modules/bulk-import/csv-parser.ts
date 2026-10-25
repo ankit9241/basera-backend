@@ -3,6 +3,8 @@
  */
 export const CANONICAL_25_HEADERS = [
   "Listing ID",
+  "Actual Property Name",
+  "Public Listing Title",
   "Public Name",
   "Listing Type",
   "Gender",
@@ -48,13 +50,29 @@ export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
   pg: "Listing ID",
   pgidentifier: "Listing ID",
 
-  // 2. Public Name
+  // 2. Actual Property Name (Confidential Admin Only)
+  actualpropertyname: "Actual Property Name",
+  actual_property_name: "Actual Property Name",
+  internalpropertyname: "Actual Property Name",
+  internal_property_name: "Actual Property Name",
+  actualname: "Actual Property Name",
+  actual_name: "Actual Property Name",
+  internalname: "Actual Property Name",
+  internal_name: "Actual Property Name",
+  pgname: "Actual Property Name",
+  pg_name: "Actual Property Name",
+  propertyname: "Actual Property Name",
+  property_name: "Actual Property Name",
+
+  // 3. Public Listing Title (Optional; auto-generated if omitted or blank)
+  publiclistingtitle: "Public Listing Title",
+  public_listing_title: "Public Listing Title",
+  publictitle: "Public Listing Title",
+  public_title: "Public Listing Title",
   publicname: "Public Name",
   public_name: "Public Name",
-  name: "Public Name",
-  title: "Public Name",
-  propertyname: "Public Name",
-  property_name: "Public Name",
+  name: "Actual Property Name",
+  title: "Public Listing Title",
 
   // 3. Listing Type
   listingtype: "Listing Type",
@@ -413,8 +431,8 @@ export function parseCsvString(csvText: string): Record<string, string>[] {
 /**
  * Pre-formatted Canonical CSV Template for Basera Listings.
  */
-export const CANONICAL_CSV_TEMPLATE = `PG_ID,Public Name,Listing Type,Gender,Area,Exact Address,Single Room Rent,Double Room Rent,Triple Room Rent,Food,Food Charges,Electricity Charges,Other Charges,Available Rooms,Furnished Status,Amenities,House Rules,Owner Name,Owner Phone,Owner Type,Availability Status,Photos / Drive Link,Verification Status,Verification Notes
-"BAS501","Green Villa Luxury PG","PG","GIRLS","Kamla Nagar","12/4 Block A, Near Chache Di Hatti, Kamla Nagar, Delhi 110007",16000,11000,8500,"Included",0,"As per meter",500,3,"Fully Furnished","Wi-Fi, AC, Geyser, RO Water, Housekeeping, Power Backup, CCTV","Gate closes at 11:00 PM, No smoking, Female guests only, ID proof required","Ramesh Gupta","9811011111","OWNER","AVAILABLE","https://drive.google.com/drive/folders/sample-bas501","VERIFIED","Physical verification completed by Basera team. Biometric entry and 24/7 warden present."
-"BAS502","Hudson Student Haven","PG","BOYS","Hudson Lane","45 Hudson Lane, Near GTB Nagar Metro Gate 3, Delhi 110009",18000,12000,"N.A.","Available",2500,"10/unit",0,2,"Semi Furnished","Wi-Fi, AC, Geyser, Refrigerator, RO Water, Power Backup","No loud music after 10:30 PM, Visitors allowed till 8 PM, No alcohol","Sunita Sharma","9811022222","CARETAKER","FEW_ROOMS_LEFT","https://drive.google.com/drive/folders/sample-bas502","VERIFIED","Sub-meter installed for each room. High-speed fiber Wi-Fi verified."`;
+export const CANONICAL_CSV_TEMPLATE = `PG_ID,Actual Property Name,Public Listing Title,Listing Type,Gender,Area,Exact Address,Single Room Rent,Double Room Rent,Triple Room Rent,Food,Food Charges,Electricity Charges,Other Charges,Available Rooms,Furnished Status,Amenities,House Rules,Owner Name,Owner Phone,Owner Type,Availability Status,Photos / Drive Link,Verification Status,Verification Notes
+"BAS501","Green Villa Luxury PG","Girls PG · Kamla Nagar","PG","GIRLS","Kamla Nagar","12/4 Block A, Near Chache Di Hatti, Kamla Nagar, Delhi 110007",16000,11000,8500,"Included",0,"As per meter",500,3,"Fully Furnished","Wi-Fi, AC, Geyser, RO Water, Housekeeping, Power Backup, CCTV","Gate closes at 11:00 PM, No smoking, Female guests only, ID proof required","Ramesh Gupta","9811011111","OWNER","AVAILABLE","https://drive.google.com/drive/folders/sample-bas501","VERIFIED","Physical verification completed by Basera team. Biometric entry and 24/7 warden present."
+"BAS502","Hudson Student Haven","","PG","BOYS","Hudson Lane","45 Hudson Lane, Near GTB Nagar Metro Gate 3, Delhi 110009",18000,12000,"N.A.","Available",2500,"10/unit",0,2,"Semi Furnished","Wi-Fi, AC, Geyser, Refrigerator, RO Water, Power Backup","No loud music after 10:30 PM, Visitors allowed till 8 PM, No alcohol","Sunita Sharma","9811022222","CARETAKER","FEW_ROOMS_LEFT","https://drive.google.com/drive/folders/sample-bas502","VERIFIED","Sub-meter installed for each room. High-speed fiber Wi-Fi verified."`;
 
 
