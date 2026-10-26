@@ -21,6 +21,12 @@ import {
   deleteStudentReview,
 } from "../../modules/reviews/review.controller";
 
+import {
+  getStudentNotificationsController,
+  markStudentNotificationAsReadController,
+  markAllStudentNotificationsAsReadController,
+} from "../../modules/notifications/notification.controller";
+
 const router = Router();
 
 router.use(requireStudentAuth);
@@ -37,6 +43,12 @@ router.post("/visits", bookStudentVisit);
 router.patch("/visits/:id/reschedule", rescheduleStudentVisit);
 router.patch("/visits/:id", rescheduleStudentVisit);
 router.patch("/visits/:id/cancel", cancelStudentVisit);
+
+// Student Notifications
+router.get("/notifications", getStudentNotificationsController);
+router.patch("/notifications/:id/read", markStudentNotificationAsReadController);
+router.post("/notifications/read-all", markAllStudentNotificationsAsReadController);
+router.patch("/notifications/read-all", markAllStudentNotificationsAsReadController);
 
 // Student Review Lifecycle
 router.get("/properties/:propertyId/review", getStudentPropertyReview);

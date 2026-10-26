@@ -142,3 +142,78 @@ export async function markAllNotificationsAsRead(
     next(error);
   }
 }
+
+export async function getStudentNotificationsController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const user = req.user!;
+    const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+    const unreadOnly = req.query.unreadOnly === "true";
+
+    const result = await NotificationService.getStudentNotifications({
+      userId: user.id,
+      page,
+      limit,
+      unreadOnly,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function markStudentNotificationAsReadController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const user = req.user!;
+    const id = String(req.params.id || "");
+
+    if (!id) {
+      throw new ApiError(400, "Notification ID is required.");
+    }
+
+    const success = await NotificationService.markStudentNotificationAsRead(user.id, id);
+
+    if (!success) {
+      throw new ApiError(404, "Notification not found or already read.");
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Notification marked as read.",
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function markAllStudentNotificationsAsReadController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const user = req.user!;
+    const count = await NotificationService.markAllStudentNotificationsAsRead(user.id);
+
+    res.status(200).json({
+      success: true,
+      message: `${count} notifications marked as read.`,
+      count,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+

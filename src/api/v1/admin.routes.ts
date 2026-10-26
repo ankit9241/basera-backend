@@ -10,6 +10,9 @@ import { handleBulkImport, getBulkImportTemplate } from "../../modules/bulk-impo
 import {
   getAdminVisitsQueue,
   updateAdminVisitStatus,
+  acceptAdminVisit,
+  rejectAdminVisit,
+  rescheduleAdminVisit,
 } from "../../modules/visits/visit.controller";
 import prisma from "../../lib/prisma";
 
@@ -131,6 +134,12 @@ router.post(
 
 router.get("/visits", requireAdminAuth("visits.read"), getAdminVisitsQueue);
 router.patch("/visits/:id/status", requireAdminAuth("visits.manage"), updateAdminVisitStatus);
+router.post("/visits/:id/accept", requireAdminAuth("visits.manage"), acceptAdminVisit);
+router.patch("/visits/:id/accept", requireAdminAuth("visits.manage"), acceptAdminVisit);
+router.post("/visits/:id/reject", requireAdminAuth("visits.manage"), rejectAdminVisit);
+router.patch("/visits/:id/reject", requireAdminAuth("visits.manage"), rejectAdminVisit);
+router.post("/visits/:id/reschedule", requireAdminAuth("visits.manage"), rescheduleAdminVisit);
+router.patch("/visits/:id/reschedule", requireAdminAuth("visits.manage"), rescheduleAdminVisit);
 
 import {
   listAdminStudents,

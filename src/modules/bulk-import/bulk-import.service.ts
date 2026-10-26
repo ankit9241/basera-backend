@@ -222,41 +222,64 @@ function normalizeAvailabilityStatus(val: unknown): { value: AvailabilityStatus;
   };
 }
 
-function normalizeVerificationStatus(val: unknown): { value: VerificationStatus; error?: string } {
-  if (!val || String(val).trim() === "") return { value: VerificationStatus.PENDING };
-  const s = String(val).toUpperCase();
+function normalizeVerificationStatus(val: unknown): { value: VerificationStatus; isExplicit: boolean; error?: string } {
+  if (val === undefined || val === null || String(val).trim() === "") {
+    return { value: VerificationStatus.PENDING, isExplicit: false };
+  }
+  const s = String(val).trim().toUpperCase();
 
   if (s.includes("VERIF") || s.includes("APPROV")) {
-    return { value: VerificationStatus.VERIFIED };
+    return { value: VerificationStatus.VERIFIED, isExplicit: true };
   }
   if (s.includes("REVIEW") || s.includes("IN_REVIEW")) {
-    return { value: VerificationStatus.IN_REVIEW };
+    return { value: VerificationStatus.IN_REVIEW, isExplicit: true };
   }
   if (s.includes("REJECT") || s.includes("DECLIN")) {
-    return { value: VerificationStatus.REJECTED };
+    return { value: VerificationStatus.REJECTED, isExplicit: true };
   }
   if (s.includes("PEND") || s.includes("DRAFT") || s.includes("NEW")) {
-    return { value: VerificationStatus.PENDING };
+    return { value: VerificationStatus.PENDING, isExplicit: true };
   }
 
   return {
     value: VerificationStatus.PENDING,
+    isExplicit: false,
     error: `Invalid Verification Status: "${val}". Allowed: Verified, In Review, Pending, Rejected`,
   };
 }
 
 function normalizeElectricity(
   rawElec: unknown
-): { type: ElectricityBillingType | null; charges: number | null; error?: string } {
+): { type: ElectricityBillingType | null; charges: number | null; rawText: string | null; error?: string } {
   if (rawElec === undefined || rawElec === null || String(rawElec).trim() === "") {
-    return { type: null, charges: null };
+    return { type: null, charges: null, rawText: null };
   }
 
   const elecVal = String(rawElec).trim();
   const upper = elecVal.toUpperCase();
 
   if (upper.includes("INCLUDED") || upper === "FREE") {
-    return { type: ElectricityBillingType.INCLUDED, charges: 0 };
+    return { type: ElectricityBillingType.INCLUDED, charges: 0, rawText: elecVal };
+  }
+
+  // Handle ambiguous strings e.g. "N.AC -750 AC-16/UNIT"
+  if (upper.includes("N.AC") || (upper.includes("AC") && upper.includes("-") && upper.includes("/UNIT"))) {
+    return {
+      type: ElectricityBillingType.BY_METER,
+      charges: null, // do not invent artificial pricing
+      rawText: elecVal,
+    };
+  }
+
+  // Match standard "15/unit", "16/unit"
+  const unitMatch = elecVal.match(/(\d+(?:\.\d+)?)\s*\/\s*unit/i);
+  if (unitMatch) {
+    const rate = parseFloat(unitMatch[1]!);
+    return {
+      type: ElectricityBillingType.BY_METER,
+      charges: isNaN(rate) ? null : rate,
+      rawText: elecVal,
+    };
   }
 
   if (upper.includes("METER") || upper.includes("UNIT") || upper.includes("/UNIT")) {
@@ -264,6 +287,7 @@ function normalizeElectricity(
     return {
       type: ElectricityBillingType.BY_METER,
       charges: numClean.value !== null ? numClean.value : null,
+      rawText: elecVal,
     };
   }
 
@@ -272,6 +296,7 @@ function normalizeElectricity(
     return {
       type: ElectricityBillingType.EXTRA_AS_PER_USAGE,
       charges: numClean.value !== null ? numClean.value : null,
+      rawText: elecVal,
     };
   }
 
@@ -280,12 +305,14 @@ function normalizeElectricity(
     return {
       type: ElectricityBillingType.FIXED_MONTHLY,
       charges: numClean.value,
+      rawText: elecVal,
     };
   }
 
   return {
     type: ElectricityBillingType.FIXED_MONTHLY,
     charges: null,
+    rawText: elecVal,
   };
 }
 
@@ -310,6 +337,7 @@ export interface ParsedBulkRow {
   foodCharges: number | null;
   electricityCharges: number | null;
   electricityType: ElectricityBillingType | null;
+  electricityRawText?: string | null;
   otherCharges: number | null;
   availableRooms: number;
   furnishedStatus: FurnishedStatus;
@@ -322,6 +350,7 @@ export interface ParsedBulkRow {
   photoDriveLink: string | null;
   verificationStatus: VerificationStatus;
   verificationNotes: string | null;
+  isExplicitVerification?: boolean;
   rentMin: number;
   rentMax: number;
   description: string;
@@ -337,6 +366,8 @@ export interface RowChange {
   field: string;
   from: string | number | null;
   to: string | number | null;
+  oldValue: string | number | null;
+  newValue: string | number | null;
 }
 
 export interface RowAction {
@@ -372,8 +403,16 @@ function diffPropertyFields(existing: any, incoming: ParsedBulkRow): RowChange[]
   const check = (field: string, oldVal: any, newVal: any) => {
     const formattedOld = oldVal === undefined || oldVal === null ? null : oldVal;
     const formattedNew = newVal === undefined || newVal === null ? null : newVal;
-    if (String(formattedOld ?? "") !== String(formattedNew ?? "")) {
-      changes.push({ field, from: formattedOld, to: formattedNew });
+    const strOld = formattedOld !== null ? String(formattedOld).trim() : "";
+    const strNew = formattedNew !== null ? String(formattedNew).trim() : "";
+    if (strOld !== strNew) {
+      changes.push({
+        field,
+        from: formattedOld,
+        to: formattedNew,
+        oldValue: formattedOld,
+        newValue: formattedNew,
+      });
     }
   };
 
@@ -393,32 +432,75 @@ function diffPropertyFields(existing: any, incoming: ParsedBulkRow): RowChange[]
   check("Double Room Rent", existing.doubleRoomRent ? Number(existing.doubleRoomRent) : null, incoming.doubleRoomRent);
   check("Triple Room Rent", existing.tripleRoomRent ? Number(existing.tripleRoomRent) : null, incoming.tripleRoomRent);
   check("Food", existing.food, incoming.food);
-  check("Food Charges", existing.foodCharges ? Number(existing.foodCharges) : null, incoming.foodCharges);
+  const checkNumericCharges = (field: string, oldVal: any, newVal: any) => {
+    const numOld = oldVal !== null && oldVal !== undefined ? Number(oldVal) : null;
+    const numNew = newVal !== null && newVal !== undefined ? Number(newVal) : null;
+    if ((numOld === 0 || numOld === null) && (numNew === 0 || numNew === null)) {
+      return;
+    }
+    if (numOld !== numNew) {
+      changes.push({
+        field,
+        from: numOld,
+        to: numNew,
+        oldValue: numOld,
+        newValue: numNew,
+      });
+    }
+  };
+
+  checkNumericCharges("Food Charges", existing.foodCharges, incoming.foodCharges);
   check("Electricity Charges", existing.electricityCharges ? Number(existing.electricityCharges) : null, incoming.electricityCharges);
   check("Electricity Type", existing.electricityType, incoming.electricityType);
-  check("Other Charges", existing.otherCharges ? Number(existing.otherCharges) : null, incoming.otherCharges);
+  checkNumericCharges("Other Charges", existing.otherCharges, incoming.otherCharges);
   check("Available Rooms", existing.availableRooms, incoming.availableRooms);
   check("Furnished Status", existing.furnishedStatus, incoming.furnishedStatus);
   check("Owner Name", existing.ownerName, incoming.ownerName);
   check("Owner Phone", existing.ownerPhone, incoming.ownerPhone);
   check("Owner Type", existing.ownerType, incoming.ownerType);
   check("Availability Status", existing.availabilityStatus, incoming.availabilityStatus);
-  check("Verification Status", existing.verificationStatus, incoming.verificationStatus);
+  if (incoming.isExplicitVerification) {
+    check("Verification Status", existing.verificationStatus, incoming.verificationStatus);
+  }
   check("Verification Notes", existing.verificationNotes, incoming.verificationNotes);
   check("Photos / Drive Link", existing.photoDriveLink, incoming.photoDriveLink);
 
-  // Compare amenities array
-  const oldAmenities = (existing.amenities || []).slice().sort().join(", ");
-  const newAmenities = incoming.amenities.slice().sort().join(", ");
-  if (oldAmenities !== newAmenities) {
-    changes.push({ field: "Amenities", from: oldAmenities || "None", to: newAmenities || "None" });
+  // Compare amenities array with case-insensitive and trimmed sorting
+  const normalizeList = (arr: any) =>
+    Array.isArray(arr)
+      ? arr
+          .map((s) => String(s).trim())
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+      : [];
+
+  const oldAmenitiesArr = normalizeList(existing.amenities);
+  const newAmenitiesArr = normalizeList(incoming.amenities);
+  const oldAmenitiesStr = oldAmenitiesArr.join(", ");
+  const newAmenitiesStr = newAmenitiesArr.join(", ");
+  if (oldAmenitiesStr.toLowerCase() !== newAmenitiesStr.toLowerCase()) {
+    changes.push({
+      field: "Amenities",
+      from: oldAmenitiesStr || "none",
+      to: newAmenitiesStr || "none",
+      oldValue: oldAmenitiesStr || "none",
+      newValue: newAmenitiesStr || "none",
+    });
   }
 
   // Compare house rules array
-  const oldRules = (existing.rules || []).slice().sort().join(", ");
-  const newRules = incoming.rules.slice().sort().join(", ");
-  if (oldRules !== newRules) {
-    changes.push({ field: "House Rules", from: oldRules || "None", to: newRules || "None" });
+  const oldRulesArr = normalizeList(existing.rules);
+  const newRulesArr = normalizeList(incoming.rules);
+  const oldRulesStr = oldRulesArr.join(", ");
+  const newRulesStr = newRulesArr.join(", ");
+  if (oldRulesStr.toLowerCase() !== newRulesStr.toLowerCase()) {
+    changes.push({
+      field: "House Rules",
+      from: oldRulesStr || "none",
+      to: newRulesStr || "none",
+      oldValue: oldRulesStr || "none",
+      newValue: newRulesStr || "none",
+    });
   }
 
   return changes;
@@ -443,9 +525,18 @@ export async function processBulkPropertyRows(
 
     // 1. Listing ID / Property Code / PG_ID
     const rawCode = (norm.listingid || norm.propertycode || norm.pgid || norm.id || "") as string;
-    const propertyCode = rawCode ? rawCode.trim().toUpperCase() : undefined;
+    let propertyCode = rawCode ? rawCode.trim().toUpperCase() : undefined;
 
     if (propertyCode) {
+      // Normalize BAS500..BAS520 to stable database code BAS-PG-501..BAS-PG-521
+      const basMatch = propertyCode.match(/^BAS(\d+)$/i);
+      if (basMatch) {
+        const num = parseInt(basMatch[1]!, 10);
+        if (num >= 500 && num <= 520) {
+          propertyCode = `BAS-PG-${num + 1}`;
+        }
+      }
+
       if (seenListingIds.has(propertyCode)) {
         const prevRow = seenListingIds.get(propertyCode)!;
         errors.push({
@@ -676,6 +767,7 @@ export async function processBulkPropertyRows(
       foodCharges: foodChargesClean.value,
       electricityCharges: elecRes.charges,
       electricityType: elecRes.type,
+      electricityRawText: elecRes.rawText,
       otherCharges: otherChargesClean.value,
       availableRooms: roomsClean.value ?? 1,
       furnishedStatus: furnishedRes.value,
@@ -688,6 +780,7 @@ export async function processBulkPropertyRows(
       photoDriveLink: photoDriveLink?.trim() || null,
       verificationStatus: verifRes.value,
       verificationNotes: verificationNotes?.trim() || null,
+      isExplicitVerification: verifRes.isExplicit,
       rentMin,
       rentMax,
       description,
@@ -701,14 +794,38 @@ export async function processBulkPropertyRows(
     .map((r) => r.data.propertyCode)
     .filter((c): c is string => Boolean(c));
 
+  const alternateCodes: string[] = [];
+  for (const c of suppliedCodes) {
+    const match = c.match(/^BAS-PG-(\d+)$/i);
+    if (match) {
+      alternateCodes.push(`BAS${parseInt(match[1]!, 10) - 1}`);
+    }
+  }
+
   const existingProperties = suppliedCodes.length > 0
     ? await prisma.property.findMany({
-        where: { propertyCode: { in: suppliedCodes } },
+        where: {
+          OR: [
+            { propertyCode: { in: suppliedCodes } },
+            ...(alternateCodes.length > 0 ? [{ propertyCode: { in: alternateCodes } }] : []),
+          ],
+        },
         include: { rooms: true },
       })
     : [];
 
-  const existingMap = new Map(existingProperties.map((p) => [p.propertyCode, p]));
+  const existingMap = new Map<string, any>();
+  for (const p of existingProperties) {
+    existingMap.set(p.propertyCode.toUpperCase(), p);
+    const match = p.propertyCode.match(/^BAS-PG-(\d+)$/i);
+    if (match) {
+      existingMap.set(`BAS${parseInt(match[1]!, 10) - 1}`, p);
+    }
+    const legacyMatch = p.propertyCode.match(/^BAS(\d+)$/i);
+    if (legacyMatch) {
+      existingMap.set(`BAS-PG-${parseInt(legacyMatch[1]!, 10) + 1}`, p);
+    }
+  }
 
   // Auto-generation counter for properties without codes (starting at BAS500 for this dataset)
   const basProperties = await prisma.property.findMany({
@@ -751,15 +868,19 @@ export async function processBulkPropertyRows(
       return;
     }
 
-    if (item.propertyCode && existingMap.has(item.propertyCode)) {
-      const existing = existingMap.get(item.propertyCode)!;
+    const existing = item.propertyCode
+      ? existingMap.get(item.propertyCode) || existingMap.get(item.propertyCode.toUpperCase())
+      : undefined;
+
+    if (existing) {
+      const code = existing.propertyCode || item.propertyCode || "Unknown";
       const changes = diffPropertyFields(existing, item);
 
       if (changes.length > 0) {
         updateCount++;
         rowActions.push({
           row: rowNum,
-          propertyCode: item.propertyCode,
+          propertyCode: code,
           publicName: item.publicName,
           action: "UPDATE",
           changes,
@@ -767,7 +888,7 @@ export async function processBulkPropertyRows(
         validActionItems.push({
           rowNum,
           action: "UPDATE",
-          code: item.propertyCode,
+          code,
           item,
           existing,
           changes,
@@ -776,14 +897,14 @@ export async function processBulkPropertyRows(
         unchangedCount++;
         rowActions.push({
           row: rowNum,
-          propertyCode: item.propertyCode,
+          propertyCode: code,
           publicName: item.publicName,
           action: "UNCHANGED",
         });
         validActionItems.push({
           rowNum,
           action: "UNCHANGED",
-          code: item.propertyCode,
+          code,
           item,
           existing,
         });
@@ -927,6 +1048,13 @@ export async function processBulkPropertyRows(
               await tx.property.create({ data: propertyData });
               importedCodes.push(code);
             } else if (action === "UPDATE" && existing) {
+              const isVerifiedBool = item.isExplicitVerification
+                ? item.verificationStatus === VerificationStatus.VERIFIED
+                : existing.isVerified;
+              const finalVerificationStatus = item.isExplicitVerification
+                ? item.verificationStatus
+                : existing.verificationStatus;
+
               const updateData: Prisma.PropertyUpdateInput = {
                 internalPropertyName: item.internalPropertyName !== undefined ? item.internalPropertyName : existing.internalPropertyName,
                 publicName: item.publicName,
@@ -946,6 +1074,14 @@ export async function processBulkPropertyRows(
                 foodCharges: item.foodCharges,
                 electricityCharges: item.electricityCharges,
                 electricityType: item.electricityType,
+                internalAdminNotes:
+                  item.electricityRawText && item.electricityCharges === null
+                    ? (existing.internalAdminNotes
+                        ? (existing.internalAdminNotes.includes(item.electricityRawText)
+                            ? existing.internalAdminNotes
+                            : `${existing.internalAdminNotes}; Electricity: ${item.electricityRawText}`)
+                        : `Electricity: ${item.electricityRawText}`)
+                    : existing.internalAdminNotes,
                 otherCharges: item.otherCharges,
                 availableRooms: item.availableRooms,
                 furnishedStatus: item.furnishedStatus,
@@ -956,10 +1092,10 @@ export async function processBulkPropertyRows(
                 ownerType: item.ownerType,
                 photoDriveLink: item.photoDriveLink,
                 availabilityStatus: item.availabilityStatus,
-                verificationStatus: item.verificationStatus,
-                verificationNotes: item.verificationNotes,
+                verificationStatus: finalVerificationStatus,
+                verificationNotes: item.verificationNotes !== undefined ? item.verificationNotes : existing.verificationNotes,
                 isVerified: isVerifiedBool,
-                verifiedAt: isVerifiedBool && !existing.verifiedAt ? new Date() : existing.verifiedAt,
+                verifiedAt: isVerifiedBool && !existing.verifiedAt ? new Date() : (isVerifiedBool ? existing.verifiedAt : null),
                 lifecycleStatus: PropertyLifecycle.PUBLISHED,
                 description: item.description,
               };

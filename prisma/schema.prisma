@@ -94,6 +94,8 @@ enum VisitStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
+  REJECTED
+  RESCHEDULED
 }
 
 enum ReviewStatus {
@@ -129,6 +131,7 @@ model User {
   savedListings       SavedListing[]
   reviews             PropertyReview[]
   verificationTokens  EmailVerificationToken[]
+  notifications       UserNotification[]
 
   @@index([phone])
   @@index([collegeEmail])
@@ -387,6 +390,8 @@ model VisitBooking {
   coordinatorId       String?
   coordinator         AdminUser?           @relation("CoordinatorVisits", fields: [coordinatorId], references: [id])
   coordinatorNotes    String?              @db.Text
+  decisionReason      String?
+  history             VisitHistory[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -394,6 +399,44 @@ model VisitBooking {
   @@index([propertyId])
   @@index([status])
   @@index([visitDate])
+}
+
+model VisitHistory {
+  id                  String               @id @default(uuid())
+  visitId             String
+  visit               VisitBooking         @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  actorType           String               // "STUDENT" | "ADMIN" | "SYSTEM"
+  actorId             String?
+  action              String               // "CREATED" | "CONFIRMED" | "REJECTED" | "RESCHEDULED" | "CANCELLED" | "COMPLETED"
+  fromStatus          VisitStatus?
+  toStatus            VisitStatus
+  reason              String?
+  scheduledDate       DateTime?
+  timeSlot            String?
+  notes               String?
+  createdAt           DateTime             @default(now())
+
+  @@index([visitId])
+  @@index([createdAt])
+}
+
+model UserNotification {
+  id                  String               @id @default(uuid())
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type                String               @default("VISIT_UPDATE")
+  title               String
+  body                String
+  link                String?              @default("/visits")
+  visitId             String?
+  isRead              Boolean              @default(false)
+  readAt              DateTime?
+  metadata            Json?
+  createdAt           DateTime             @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
 }
 
 model EmailVerificationToken {
