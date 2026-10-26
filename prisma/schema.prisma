@@ -228,6 +228,7 @@ model Property {
   foodPolicy          String?                   @db.Text
   electricityCharges  Decimal?                  @db.Decimal(10, 2)
   electricityType     ElectricityBillingType?
+  electricityDetails  Json?
   otherCharges        Decimal?                  @db.Decimal(10, 2)
 
   // Living, Units & Rules

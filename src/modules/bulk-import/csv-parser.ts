@@ -1,10 +1,34 @@
 /**
- * Canonical 25 CSV Headers for Basera Property Listings
+ * Canonical 25 Spreadsheet Headers for Basera Property Listings
+ * Matches the exact 25-column specification in Section 2:
+ * 1. PG_ID
+ * 2. Public Name
+ * 3. Listing Type
+ * 4. Gender
+ * 5. Area
+ * 6. Exact Address
+ * 7. Deposit Amount
+ * 8. Single Room Rent
+ * 9. Double Room Rent
+ * 10. Triple Room Rent
+ * 11. Food
+ * 12. Food Charges
+ * 13. Electricity Charges
+ * 14. Other Charges
+ * 15. Available Rooms
+ * 16. Furnished Status
+ * 17. Amenities
+ * 18. House Rules
+ * 19. Owner Name
+ * 20. Owner Phone
+ * 21. Owner Type
+ * 22. Availability Status
+ * 23. Photos / Drive Link
+ * 24. Verification Status
+ * 25. Verification Notes
  */
 export const CANONICAL_25_HEADERS = [
-  "Listing ID",
-  "Actual Property Name",
-  "Public Listing Title",
+  "PG_ID",
   "Public Name",
   "Listing Type",
   "Gender",
@@ -29,50 +53,54 @@ export const CANONICAL_25_HEADERS = [
   "Photos / Drive Link",
   "Verification Status",
   "Verification Notes",
-  "Deposit Policy",
 ] as const;
 
 export type CanonicalHeader = (typeof CANONICAL_25_HEADERS)[number];
 
+export const REQUIRED_HEADERS: CanonicalHeader[] = [
+  "PG_ID",
+  "Public Name",
+  "Area",
+  "Exact Address",
+];
+
 /**
- * Normalization map for common header aliases from Excel, Google Sheets, and LibreOffice.
+ * Normalization map for common header aliases from Excel, Google Sheets, LibreOffice, and CSV exports.
  */
 export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
-  // 1. Listing ID
-  listingid: "Listing ID",
-  listing_id: "Listing ID",
-  propertycode: "Listing ID",
-  property_code: "Listing ID",
-  code: "Listing ID",
-  id: "Listing ID",
-  pgid: "Listing ID",
-  pg_id: "Listing ID",
-  pg: "Listing ID",
-  pgidentifier: "Listing ID",
+  // 1. PG_ID (Listing ID)
+  pgid: "PG_ID",
+  pg_id: "PG_ID",
+  listingid: "PG_ID",
+  listing_id: "PG_ID",
+  propertycode: "PG_ID",
+  property_code: "PG_ID",
+  code: "PG_ID",
+  id: "PG_ID",
+  pg: "PG_ID",
+  pgidentifier: "PG_ID",
 
-  // 2. Actual Property Name (Confidential Admin Only)
-  actualpropertyname: "Actual Property Name",
-  actual_property_name: "Actual Property Name",
-  internalpropertyname: "Actual Property Name",
-  internal_property_name: "Actual Property Name",
-  actualname: "Actual Property Name",
-  actual_name: "Actual Property Name",
-  internalname: "Actual Property Name",
-  internal_name: "Actual Property Name",
-  pgname: "Actual Property Name",
-  pg_name: "Actual Property Name",
-  propertyname: "Actual Property Name",
-  property_name: "Actual Property Name",
-
-  // 3. Public Listing Title (Optional; auto-generated if omitted or blank)
-  publiclistingtitle: "Public Listing Title",
-  public_listing_title: "Public Listing Title",
-  publictitle: "Public Listing Title",
-  public_title: "Public Listing Title",
+  // 2. Public Name (Internal Property Name where supported)
   publicname: "Public Name",
   public_name: "Public Name",
-  name: "Actual Property Name",
-  title: "Public Listing Title",
+  actualpropertyname: "Public Name",
+  actual_property_name: "Public Name",
+  internalpropertyname: "Public Name",
+  internal_property_name: "Public Name",
+  actualname: "Public Name",
+  actual_name: "Public Name",
+  internalname: "Public Name",
+  internal_name: "Public Name",
+  pgname: "Public Name",
+  pg_name: "Public Name",
+  propertyname: "Public Name",
+  property_name: "Public Name",
+  name: "Public Name",
+  title: "Public Name",
+  publiclistingtitle: "Public Name",
+  public_listing_title: "Public Name",
+  publictitle: "Public Name",
+  public_title: "Public Name",
 
   // 3. Listing Type
   listingtype: "Listing Type",
@@ -101,13 +129,14 @@ export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
   fulladdress: "Exact Address",
   full_address: "Exact Address",
 
-  // 7. Deposit Amount (Legacy / Optional) & Deposit Policy
+  // 7. Deposit Amount
   depositamount: "Deposit Amount",
   deposit_amount: "Deposit Amount",
   deposit: "Deposit Amount",
   securitydeposit: "Deposit Amount",
-  depositpolicy: "Deposit Policy",
-  deposit_policy: "Deposit Policy",
+  security_deposit: "Deposit Amount",
+  depositpolicy: "Deposit Amount",
+  deposit_policy: "Deposit Amount",
 
   // 8. Single Room Rent
   singleroomrent: "Single Room Rent",
@@ -130,13 +159,16 @@ export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
   // 11. Food
   food: "Food",
   foodstatus: "Food",
+  food_status: "Food",
   meals: "Food",
   foodincluded: "Food",
+  food_included: "Food",
 
   // 12. Food Charges
   foodcharges: "Food Charges",
   food_charges: "Food Charges",
   mealcharges: "Food Charges",
+  meal_charges: "Food Charges",
   foodcharge: "Food Charges",
 
   // 13. Electricity Charges
@@ -144,12 +176,14 @@ export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
   electricity_charges: "Electricity Charges",
   electricity: "Electricity Charges",
   electricitytype: "Electricity Charges",
+  electricity_type: "Electricity Charges",
   electricitybillingtype: "Electricity Charges",
 
   // 14. Other Charges
   othercharges: "Other Charges",
   other_charges: "Other Charges",
   maintenancecharges: "Other Charges",
+  maintenance_charges: "Other Charges",
   maintenance: "Other Charges",
 
   // 15. Available Rooms
@@ -158,6 +192,7 @@ export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
   rooms: "Available Rooms",
   units: "Available Rooms",
   availableunits: "Available Rooms",
+  available_units: "Available Rooms",
 
   // 16. Furnished Status
   furnishedstatus: "Furnished Status",
@@ -187,14 +222,17 @@ export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
   ownerphone: "Owner Phone",
   owner_phone: "Owner Phone",
   landlordphone: "Owner Phone",
+  landlord_phone: "Owner Phone",
   phone: "Owner Phone",
   mobile: "Owner Phone",
   ownermobile: "Owner Phone",
+  owner_mobile: "Owner Phone",
 
   // 21. Owner Type
   ownertype: "Owner Type",
   owner_type: "Owner Type",
   landlordtype: "Owner Type",
+  landlord_type: "Owner Type",
 
   // 22. Availability Status
   availabilitystatus: "Availability Status",
@@ -206,29 +244,36 @@ export const HEADER_ALIAS_MAP: Record<string, CanonicalHeader> = {
   photosdrivelink: "Photos / Drive Link",
   photos_drive_link: "Photos / Drive Link",
   photos: "Photos / Drive Link",
+  photo: "Photos / Drive Link",
   drivelink: "Photos / Drive Link",
   drive_link: "Photos / Drive Link",
   driveurl: "Photos / Drive Link",
+  drive_url: "Photos / Drive Link",
   photodrivelink: "Photos / Drive Link",
-  photo: "Photos / Drive Link",
+  photo_drive_link: "Photos / Drive Link",
 
   // 24. Verification Status
   verificationstatus: "Verification Status",
   verification_status: "Verification Status",
   verification: "Verification Status",
   verifiedstatus: "Verification Status",
+  verified_status: "Verification Status",
 
   // 25. Verification Notes
   verificationnotes: "Verification Notes",
   verification_notes: "Verification Notes",
   notes: "Verification Notes",
   internalnotes: "Verification Notes",
+  internal_notes: "Verification Notes",
 };
 
 export interface ParseCsvDetailedResult {
   rows: Record<string, string>[];
   headers: string[];
   canonicalHeadersMap: Record<string, CanonicalHeader>;
+  headerCount: number;
+  duplicateHeaders: string[];
+  missingRequiredHeaders: string[];
   unknownHeaders: string[];
   warnings: string[];
 }
@@ -251,6 +296,7 @@ export function resolveCanonicalHeader(rawHeader: string): CanonicalHeader | nul
  * - Empty fields (,, or ,"",)
  * - Trailing blank rows from spreadsheet exports
  * - Header alias normalization to canonical 25 columns
+ * - Detection of duplicate headers, missing required headers, and unknown columns
  */
 export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
   if (!csvText || typeof csvText !== "string") {
@@ -258,8 +304,11 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
       rows: [],
       headers: [],
       canonicalHeadersMap: {},
+      headerCount: 0,
+      duplicateHeaders: [],
+      missingRequiredHeaders: [...REQUIRED_HEADERS],
       unknownHeaders: [],
-      warnings: [],
+      warnings: ["No file content provided."],
     };
   }
 
@@ -303,12 +352,10 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
     if (inQuotes) {
       if (char === '"') {
         if (nextChar === '"') {
-          // Escaped quote: "" represents a literal "
           currentField += '"';
           i += 2;
           continue;
         } else {
-          // Closing quote
           inQuotes = false;
           i++;
           continue;
@@ -320,7 +367,6 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
       }
     } else {
       if (char === '"') {
-        // Opening quote
         inQuotes = true;
         i++;
         continue;
@@ -331,7 +377,7 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
         continue;
       } else if (char === '\r') {
         if (nextChar === '\n') {
-          i++; // Skip \r in \r\n
+          i++;
         }
         currentRow.push(currentField);
         currentField = "";
@@ -354,7 +400,6 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
     }
   }
 
-  // Push final field/row if any remained unclosed
   if (currentField.length > 0 || currentRow.length > 0) {
     currentRow.push(currentField);
     rawLines.push(currentRow);
@@ -368,26 +413,46 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
       rows: [],
       headers: cleanRows[0]?.map((h) => h.trim().replace(/^["']|["']$/g, "")) || [],
       canonicalHeadersMap: {},
+      headerCount: cleanRows[0]?.length || 0,
+      duplicateHeaders: [],
+      missingRequiredHeaders: [...REQUIRED_HEADERS],
       unknownHeaders: [],
-      warnings: ["CSV contains fewer than 2 non-empty lines (header + data row required)."],
+      warnings: ["Spreadsheet contains fewer than 2 non-empty lines (header + data row required)."],
     };
   }
 
   const rawHeaders = cleanRows[0]!.map((h) => h.trim().replace(/^["']|["']$/g, ""));
   const canonicalHeadersMap: Record<string, CanonicalHeader> = {};
+  const seenHeaders = new Set<string>();
+  const duplicateHeaders: string[] = [];
   const unknownHeaders: string[] = [];
   const warnings: string[] = [];
 
   rawHeaders.forEach((h) => {
     if (!h) return;
+    const lowerClean = h.toLowerCase().trim();
+    if (seenHeaders.has(lowerClean)) {
+      duplicateHeaders.push(h);
+      warnings.push(`Duplicate column header "${h}" detected.`);
+    } else {
+      seenHeaders.add(lowerClean);
+    }
+
     const canonical = resolveCanonicalHeader(h);
     if (canonical) {
       canonicalHeadersMap[h] = canonical;
     } else {
       unknownHeaders.push(h);
-      warnings.push(`Unrecognized column "${h}" will be ignored.`);
+      warnings.push(`Unrecognized column "${h}" will be retained as raw data.`);
     }
   });
+
+  // Verify required headers
+  const mappedCanonicalSet = new Set(Object.values(canonicalHeadersMap));
+  const missingRequiredHeaders = REQUIRED_HEADERS.filter((req) => !mappedCanonicalSet.has(req));
+  if (missingRequiredHeaders.length > 0) {
+    warnings.push(`Missing required column(s): ${missingRequiredHeaders.join(", ")}`);
+  }
 
   const dataRows: Record<string, string>[] = [];
 
@@ -399,7 +464,7 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
       const headerName = rawHeaders[c]!;
       if (!headerName) continue;
       const val = values[c] !== undefined ? values[c]!.trim() : "";
-      
+
       // Store under raw header name
       rowObj[headerName] = val;
 
@@ -416,23 +481,48 @@ export function parseCsvDetailed(csvText: string): ParseCsvDetailedResult {
     rows: dataRows,
     headers: rawHeaders,
     canonicalHeadersMap,
+    headerCount: rawHeaders.length,
+    duplicateHeaders,
+    missingRequiredHeaders,
     unknownHeaders,
     warnings,
   };
 }
 
-/**
- * Backward-compatible helper returning Record<string, string>[] with both canonical and raw headers populated.
- */
 export function parseCsvString(csvText: string): Record<string, string>[] {
   return parseCsvDetailed(csvText).rows;
 }
 
 /**
- * Pre-formatted Canonical CSV Template for Basera Listings.
+ * Pre-formatted Canonical 25-Column CSV Template matching Section 2:
+ * 1. PG_ID
+ * 2. Public Name
+ * 3. Listing Type
+ * 4. Gender
+ * 5. Area
+ * 6. Exact Address
+ * 7. Deposit Amount
+ * 8. Single Room Rent
+ * 9. Double Room Rent
+ * 10. Triple Room Rent
+ * 11. Food
+ * 12. Food Charges
+ * 13. Electricity Charges
+ * 14. Other Charges
+ * 15. Available Rooms
+ * 16. Furnished Status
+ * 17. Amenities
+ * 18. House Rules
+ * 19. Owner Name
+ * 20. Owner Phone
+ * 21. Owner Type
+ * 22. Availability Status
+ * 23. Photos / Drive Link
+ * 24. Verification Status
+ * 25. Verification Notes
  */
-export const CANONICAL_CSV_TEMPLATE = `PG_ID,Actual Property Name,Public Listing Title,Listing Type,Gender,Area,Exact Address,Single Room Rent,Double Room Rent,Triple Room Rent,Food,Food Charges,Electricity Charges,Other Charges,Available Rooms,Furnished Status,Amenities,House Rules,Owner Name,Owner Phone,Owner Type,Availability Status,Photos / Drive Link,Verification Status,Verification Notes
-"BAS501","Green Villa Luxury PG","Girls PG · Kamla Nagar","PG","GIRLS","Kamla Nagar","12/4 Block A, Near Chache Di Hatti, Kamla Nagar, Delhi 110007",16000,11000,8500,"Included",0,"As per meter",500,3,"Fully Furnished","Wi-Fi, AC, Geyser, RO Water, Housekeeping, Power Backup, CCTV","Gate closes at 11:00 PM, No smoking, Female guests only, ID proof required","Ramesh Gupta","9811011111","OWNER","AVAILABLE","https://drive.google.com/drive/folders/sample-bas501","VERIFIED","Physical verification completed by Basera team. Biometric entry and 24/7 warden present."
-"BAS502","Hudson Student Haven","","PG","BOYS","Hudson Lane","45 Hudson Lane, Near GTB Nagar Metro Gate 3, Delhi 110009",18000,12000,"N.A.","Available",2500,"10/unit",0,2,"Semi Furnished","Wi-Fi, AC, Geyser, Refrigerator, RO Water, Power Backup","No loud music after 10:30 PM, Visitors allowed till 8 PM, No alcohol","Sunita Sharma","9811022222","CARETAKER","FEW_ROOMS_LEFT","https://drive.google.com/drive/folders/sample-bas502","VERIFIED","Sub-meter installed for each room. High-speed fiber Wi-Fi verified."`;
-
-
+export const CANONICAL_CSV_TEMPLATE = `PG_ID,Public Name,Listing Type,Gender,Area,Exact Address,Deposit Amount,Single Room Rent,Double Room Rent,Triple Room Rent,Food,Food Charges,Electricity Charges,Other Charges,Available Rooms,Furnished Status,Amenities,House Rules,Owner Name,Owner Phone,Owner Type,Availability Status,Photos / Drive Link,Verification Status,Verification Notes
+"BAS-PG-501","Sai Kunj","PG","Boys","Kamla Nagar","71-UB, Jawahar Nagar, Kamla Nagar, Delhi 110007","1 month rent",,12500,10000,"Included in Rent",0,"15/unit",0,1,"Semi Furnished","Wi-Fi, AC, Washing Machine, Study Table, Cupboard, Refrigerator, Geyser, Housekeeping","Gate closes at 11 PM, No loud music","Rupesh Bansal","9873074213","Owner","Available","https://drive.google.com/drive/folders/sample-bas501","",""
+"BAS-PG-506","Elite Stay","PG","Boys","Kamla Nagar","14-UB, Jawahar Nagar, Kamla Nagar, Delhi 110007","1 month rent",,12500,10000,"Included in Rent",0,,0,1,"Semi Furnished","Wi-Fi, AC, Washing Machine, Study Table, Cupboard, Refrigerator, Geyser, Housekeeping","Gate closes at 11 PM, Visitors allowed till 8 PM","Sanjay Jain","9811804791","Owner","Available","https://drive.google.com/drive/folders/sample-bas506","Verified","Physical verification completed by Basera coordinator. Sub-meters verified."
+"BAS-PG-508","Grand Hostel Girls PG","PG","Girls","Kamla Nagar","23 UA, Jawahar Nagar, Kamla Nagar, Delhi 110007","1 month rent",,13000,11000,"Included in Rent",0,"N.AC -750 AC-16/UNIT",0,1,"Fully Furnished","Wi-Fi, AC, Washing Machine, Study Table, Cupboard, Refrigerator, Geyser, Housekeeping","No entry after 10:30 PM, Female guests only","Manish Kumar","7979725470","Owner","Available","https://drive.google.com/drive/folders/sample-bas508","Verified","Dual electricity rate verified: Non-AC ₹750/mo and AC ₹16/unit."
+"BAS-PG-509","Sunrise Residency","PG","Boys","Kamla Nagar","38 UA, Jawahar Nagar, Kamla Nagar, Delhi 110007","1 month rent",,14000,11000,"Included in Rent",0,"1000 rs",0,1,"Fully Furnished","Wi-Fi, AC, Washing Machine, Study Table, Cupboard, Refrigerator, Geyser, Housekeeping","ID required, Visitors till 8 PM","Ramesh Verma","9811099999","Owner","Available","https://drive.google.com/drive/folders/sample-bas509","Verified","Fixed electricity charge ₹1,000."`;

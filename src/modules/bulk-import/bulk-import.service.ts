@@ -248,71 +248,160 @@ function normalizeVerificationStatus(val: unknown): { value: VerificationStatus;
   };
 }
 
+export interface StructuredElectricityDetails {
+  billingMode: "METERED" | "FIXED" | "SEPARATE_AC_NON_AC" | "INCLUDED" | "NOT_INCLUDED" | "UNKNOWN";
+  perUnitRate?: number | null;
+  fixedAmount?: number | null;
+  billingPeriod?: "MONTHLY" | "UNKNOWN" | null;
+  nonAcCharges?: number | null;
+  nonAcRateUnit?: string | null; // e.g. "₹750" or "₹750/mo"
+  acCharges?: number | null;
+  acRateUnit?: string | null;    // e.g. "₹16/unit"
+  rawSourceText: string;
+  displayDescription: string;
+  requiresReview: boolean;
+  reviewReason?: string | null;
+}
+
 function normalizeElectricity(
   rawElec: unknown
-): { type: ElectricityBillingType | null; charges: number | null; rawText: string | null; error?: string } {
+): {
+  type: ElectricityBillingType | null;
+  charges: number | null;
+  rawText: string | null;
+  electricityDetails: StructuredElectricityDetails | null;
+  error?: string;
+} {
   if (rawElec === undefined || rawElec === null || String(rawElec).trim() === "") {
-    return { type: null, charges: null, rawText: null };
+    const details: StructuredElectricityDetails = {
+      billingMode: "NOT_INCLUDED",
+      rawSourceText: "",
+      displayDescription: "Electricity charges not specified",
+      requiresReview: false,
+    };
+    return {
+      type: null,
+      charges: null,
+      rawText: null,
+      electricityDetails: details,
+    };
   }
 
   const elecVal = String(rawElec).trim();
   const upper = elecVal.toUpperCase();
 
-  if (upper.includes("INCLUDED") || upper === "FREE") {
-    return { type: ElectricityBillingType.INCLUDED, charges: 0, rawText: elecVal };
-  }
-
-  // Handle ambiguous strings e.g. "N.AC -750 AC-16/UNIT"
-  if (upper.includes("N.AC") || (upper.includes("AC") && upper.includes("-") && upper.includes("/UNIT"))) {
+  // 1. Included in rent / free
+  if (upper.includes("INCLUDED") || upper === "FREE" || upper === "INCLUSIVE") {
+    const details: StructuredElectricityDetails = {
+      billingMode: "INCLUDED",
+      rawSourceText: elecVal,
+      displayDescription: "Included in rent",
+      requiresReview: false,
+    };
     return {
-      type: ElectricityBillingType.BY_METER,
-      charges: null, // do not invent artificial pricing
+      type: ElectricityBillingType.INCLUDED,
+      charges: 0,
       rawText: elecVal,
+      electricityDetails: details,
     };
   }
 
-  // Match standard "15/unit", "16/unit"
+  // 2. Separate AC and non-AC format: e.g. "N.AC -750 AC-16/UNIT", "NON AC 750, AC 16/UNIT"
+  const nacMatch = elecVal.match(/N(?:ON)?\.?\s*AC\s*[-:\s]\s*(\d+(?:\.\d+)?)\s*(?:\/?[a-zA-Z]*)?[\s,;]+AC\s*[-:\s]\s*(\d+(?:\.\d+)?)\s*\/?\s*(UNIT)?/i);
+  if (nacMatch) {
+    const nonAcRate = parseFloat(nacMatch[1]!);
+    const acRate = parseFloat(nacMatch[2]!);
+    const details: StructuredElectricityDetails = {
+      billingMode: "SEPARATE_AC_NON_AC",
+      nonAcCharges: isNaN(nonAcRate) ? null : nonAcRate,
+      nonAcRateUnit: "₹750",
+      acCharges: isNaN(acRate) ? null : acRate,
+      acRateUnit: "₹16/unit",
+      rawSourceText: elecVal,
+      displayDescription: `Non-AC: ₹${nonAcRate} · AC: ₹${acRate}/unit`,
+      requiresReview: false,
+    };
+    return {
+      type: ElectricityBillingType.BY_METER,
+      charges: isNaN(acRate) ? null : acRate,
+      rawText: elecVal,
+      electricityDetails: details,
+    };
+  }
+
+  // 3. Metered per unit rate: e.g. "15/unit", "16/unit", "10 / unit"
   const unitMatch = elecVal.match(/(\d+(?:\.\d+)?)\s*\/\s*unit/i);
   if (unitMatch) {
     const rate = parseFloat(unitMatch[1]!);
+    const details: StructuredElectricityDetails = {
+      billingMode: "METERED",
+      perUnitRate: isNaN(rate) ? null : rate,
+      rawSourceText: elecVal,
+      displayDescription: isNaN(rate) ? elecVal : `₹${rate}/unit`,
+      requiresReview: false,
+    };
     return {
       type: ElectricityBillingType.BY_METER,
       charges: isNaN(rate) ? null : rate,
       rawText: elecVal,
+      electricityDetails: details,
     };
   }
 
-  if (upper.includes("METER") || upper.includes("UNIT") || upper.includes("/UNIT")) {
-    const numClean = cleanNumericAmount(elecVal.replace(/[^0-9.]/g, ""), "Electricity Charges");
+  // 4. "As per meter", "By meter", "Meter reading"
+  if (upper.includes("METER") && !/\d/.test(elecVal)) {
+    const details: StructuredElectricityDetails = {
+      billingMode: "METERED",
+      rawSourceText: elecVal,
+      displayDescription: "As per meter",
+      requiresReview: false,
+    };
     return {
       type: ElectricityBillingType.BY_METER,
-      charges: numClean.value !== null ? numClean.value : null,
+      charges: null,
       rawText: elecVal,
+      electricityDetails: details,
     };
   }
 
-  if (upper.includes("USAGE") || upper.includes("BILL")) {
-    const numClean = cleanNumericAmount(elecVal.replace(/[^0-9.]/g, ""), "Electricity Charges");
-    return {
-      type: ElectricityBillingType.EXTRA_AS_PER_USAGE,
-      charges: numClean.value !== null ? numClean.value : null,
-      rawText: elecVal,
+  // 5. Fixed amount with or without currency e.g. "1000 rs", "₹1,000", "1000/month", "1000"
+  const hasMonth = /month|mo|\/m/i.test(elecVal);
+  const cleanedNum = cleanNumericAmount(elecVal.replace(/rs\.?|inr|\/-|\/month|\/mo/gi, ""), "Electricity Charges");
+  if (cleanedNum.value !== null && cleanedNum.value > 0) {
+    const amt = cleanedNum.value;
+    const isPeriodExplicit = hasMonth;
+    const details: StructuredElectricityDetails = {
+      billingMode: "FIXED",
+      fixedAmount: amt,
+      billingPeriod: isPeriodExplicit ? "MONTHLY" : "UNKNOWN",
+      rawSourceText: elecVal,
+      // Do not assume ₹1,000 means per month unless explicit; display pure amount if unknown period
+      displayDescription: isPeriodExplicit ? `₹${amt.toLocaleString("en-IN")}/mo` : `₹${amt.toLocaleString("en-IN")}`,
+      requiresReview: !isPeriodExplicit,
+      reviewReason: isPeriodExplicit ? undefined : `Billing period not specified in source ("${elecVal}")`,
     };
-  }
-
-  const numClean = cleanNumericAmount(elecVal, "Electricity Charges");
-  if (numClean.value !== null) {
     return {
       type: ElectricityBillingType.FIXED_MONTHLY,
-      charges: numClean.value,
+      charges: amt,
       rawText: elecVal,
+      electricityDetails: details,
     };
   }
 
+  // 6. Unknown / Unparsed format: retain source string safely and flag for review
+  const details: StructuredElectricityDetails = {
+    billingMode: "UNKNOWN",
+    rawSourceText: elecVal,
+    displayDescription: elecVal,
+    requiresReview: true,
+    reviewReason: `Unrecognized electricity charges format: "${elecVal}"`,
+  };
+
   return {
-    type: ElectricityBillingType.FIXED_MONTHLY,
+    type: ElectricityBillingType.EXTRA_AS_PER_USAGE,
     charges: null,
     rawText: elecVal,
+    electricityDetails: details,
   };
 }
 
@@ -338,6 +427,7 @@ export interface ParsedBulkRow {
   electricityCharges: number | null;
   electricityType: ElectricityBillingType | null;
   electricityRawText?: string | null;
+  electricityDetails?: StructuredElectricityDetails | null;
   otherCharges: number | null;
   availableRooms: number;
   furnishedStatus: FurnishedStatus;
@@ -450,8 +540,33 @@ function diffPropertyFields(existing: any, incoming: ParsedBulkRow): RowChange[]
   };
 
   checkNumericCharges("Food Charges", existing.foodCharges, incoming.foodCharges);
-  check("Electricity Charges", existing.electricityCharges ? Number(existing.electricityCharges) : null, incoming.electricityCharges);
-  check("Electricity Type", existing.electricityType, incoming.electricityType);
+  const oldElecDesc = existing.electricityDetails && typeof existing.electricityDetails === "object" && existing.electricityDetails.displayDescription
+    ? existing.electricityDetails.displayDescription
+    : existing.electricityCharges
+    ? (Number(existing.electricityCharges) > 50 ? `₹${Number(existing.electricityCharges)}` : `₹${Number(existing.electricityCharges)}/unit`)
+    : existing.electricityType
+    ? existing.electricityType
+    : "Electricity charges not specified";
+
+  const newElecDesc = incoming.electricityDetails?.displayDescription || (
+    incoming.electricityCharges
+      ? (Number(incoming.electricityCharges) > 50 ? `₹${incoming.electricityCharges}` : `₹${incoming.electricityCharges}/unit`)
+      : incoming.electricityType
+      ? incoming.electricityType
+      : "Electricity charges not specified"
+  );
+
+  // If both represent an unspecified state, do not flag a change
+  const isUnspecified = (s: string | null) => !s || s === "null" || s === "Electricity charges not specified";
+  if (oldElecDesc !== newElecDesc && !(isUnspecified(oldElecDesc) && isUnspecified(newElecDesc))) {
+    changes.push({
+      field: "Electricity Charges",
+      from: oldElecDesc,
+      to: newElecDesc,
+      oldValue: oldElecDesc,
+      newValue: newElecDesc,
+    });
+  }
   checkNumericCharges("Other Charges", existing.otherCharges, incoming.otherCharges);
   check("Available Rooms", existing.availableRooms, incoming.availableRooms);
   check("Furnished Status", existing.furnishedStatus, incoming.furnishedStatus);
@@ -550,27 +665,13 @@ export async function processBulkPropertyRows(
     }
 
     // 2. Property Names: Actual Name (Confidential) & Public Listing Title
-    const actualName = (
-      (norm.actualpropertyname ||
-        norm.internalpropertyname ||
-        norm.propertyname ||
-        norm.pgname ||
-        norm.actualname ||
-        norm.internalname ||
-        norm.name ||
-        "") as string
-    ).trim();
+    // In canonical 25-column sheet: Col 2 is "Public Name" containing the actual PG name (e.g. "Sai Kunj").
+    // We also support explicit "Actual Property Name" and "Public Listing Title" columns when present.
+    const rawActual = raw["Actual Property Name"] || raw["actualpropertyname"] || raw["actual_property_name"] || raw["Public Name"] || raw["publicname"] || raw["public_name"] || norm.publicname;
+    const resolvedActualName = typeof rawActual === "string" ? rawActual.trim() : "";
 
-    const rawPublicTitle = (
-      (norm.publiclistingtitle ||
-        norm.publictitle ||
-        norm.publicname ||
-        norm.title ||
-        "") as string
-    ).trim();
-
-    // Fallback if user used legacy "Public Name" column for the actual PG name
-    const resolvedActualName = actualName || (norm.publicname ? String(norm.publicname).trim() : "");
+    const explicitPublicTitle = raw["Public Listing Title"] || raw["publiclistingtitle"] || raw["public_listing_title"];
+    const rawPublicTitle = typeof explicitPublicTitle === "string" ? explicitPublicTitle.trim() : "";
 
     if (!resolvedActualName || resolvedActualName.length < 2) {
       errors.push({
@@ -750,6 +851,13 @@ export async function processBulkPropertyRows(
       (norm.description as string) ||
       `Verified ${genderLabel} ${typeLabel} in ${area} tailored for Delhi University students.`;
 
+    const finalDepositAmount =
+      depositCleanValue > 0
+        ? depositCleanValue
+        : detectedDepositPolicy === DepositPolicy.ONE_MONTH_RENT && rentMin > 0
+        ? rentMin
+        : 0;
+
     const rowCandidate: ParsedBulkRow = {
       propertyCode,
       internalPropertyName: resolvedActualName || null,
@@ -758,7 +866,7 @@ export async function processBulkPropertyRows(
       gender: genderRes.value,
       area,
       exactAddress,
-      depositAmount: depositCleanValue,
+      depositAmount: finalDepositAmount,
       depositPolicy: detectedDepositPolicy,
       singleRoomRent: singleRentClean.value,
       doubleRoomRent: doubleRentClean.value,
@@ -768,6 +876,7 @@ export async function processBulkPropertyRows(
       electricityCharges: elecRes.charges,
       electricityType: elecRes.type,
       electricityRawText: elecRes.rawText,
+      electricityDetails: elecRes.electricityDetails,
       otherCharges: otherChargesClean.value,
       availableRooms: roomsClean.value ?? 1,
       furnishedStatus: furnishedRes.value,
@@ -1023,6 +1132,7 @@ export async function processBulkPropertyRows(
                 foodCharges: item.foodCharges,
                 electricityCharges: item.electricityCharges,
                 electricityType: item.electricityType,
+                electricityDetails: item.electricityDetails ? (item.electricityDetails as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
                 otherCharges: item.otherCharges,
                 availableRooms: item.availableRooms,
                 furnishedStatus: item.furnishedStatus,
@@ -1065,15 +1175,16 @@ export async function processBulkPropertyRows(
                 exactAddress: item.exactAddress,
                 depositAmount: item.depositAmount > 0 ? item.depositAmount : existing.depositAmount,
                 depositPolicy: item.depositPolicy !== undefined ? item.depositPolicy : existing.depositPolicy,
-                singleRoomRent: item.singleRoomRent,
-                doubleRoomRent: item.doubleRoomRent,
-                tripleRoomRent: item.tripleRoomRent,
-                rentMin: item.rentMin,
-                rentMax: item.rentMax,
+                singleRoomRent: item.singleRoomRent !== null ? item.singleRoomRent : existing.singleRoomRent,
+                doubleRoomRent: item.doubleRoomRent !== null ? item.doubleRoomRent : existing.doubleRoomRent,
+                tripleRoomRent: item.tripleRoomRent !== null ? item.tripleRoomRent : existing.tripleRoomRent,
+                rentMin: item.rentMin > 0 ? item.rentMin : existing.rentMin,
+                rentMax: item.rentMax > 0 ? item.rentMax : existing.rentMax,
                 food: item.food,
-                foodCharges: item.foodCharges,
-                electricityCharges: item.electricityCharges,
-                electricityType: item.electricityType,
+                foodCharges: item.foodCharges !== null ? item.foodCharges : existing.foodCharges,
+                electricityCharges: item.electricityCharges !== null ? item.electricityCharges : existing.electricityCharges,
+                electricityType: item.electricityType !== null ? item.electricityType : existing.electricityType,
+                electricityDetails: item.electricityDetails ? (item.electricityDetails as unknown as Prisma.InputJsonValue) : existing.electricityDetails,
                 internalAdminNotes:
                   item.electricityRawText && item.electricityCharges === null
                     ? (existing.internalAdminNotes
@@ -1082,18 +1193,18 @@ export async function processBulkPropertyRows(
                             : `${existing.internalAdminNotes}; Electricity: ${item.electricityRawText}`)
                         : `Electricity: ${item.electricityRawText}`)
                     : existing.internalAdminNotes,
-                otherCharges: item.otherCharges,
-                availableRooms: item.availableRooms,
+                otherCharges: item.otherCharges !== null ? item.otherCharges : existing.otherCharges,
+                availableRooms: item.availableRooms > 0 ? item.availableRooms : existing.availableRooms,
                 furnishedStatus: item.furnishedStatus,
-                amenities: item.amenities,
-                rules: item.rules,
-                ownerName: item.ownerName,
-                ownerPhone: item.ownerPhone,
+                amenities: item.amenities && item.amenities.length > 0 ? item.amenities : existing.amenities,
+                rules: item.rules && item.rules.length > 0 ? item.rules : existing.rules,
+                ownerName: item.ownerName ? item.ownerName : existing.ownerName,
+                ownerPhone: item.ownerPhone ? item.ownerPhone : existing.ownerPhone,
                 ownerType: item.ownerType,
-                photoDriveLink: item.photoDriveLink,
+                photoDriveLink: item.photoDriveLink ? item.photoDriveLink : existing.photoDriveLink,
                 availabilityStatus: item.availabilityStatus,
                 verificationStatus: finalVerificationStatus,
-                verificationNotes: item.verificationNotes !== undefined ? item.verificationNotes : existing.verificationNotes,
+                verificationNotes: item.verificationNotes ? item.verificationNotes : existing.verificationNotes,
                 isVerified: isVerifiedBool,
                 verifiedAt: isVerifiedBool && !existing.verifiedAt ? new Date() : (isVerifiedBool ? existing.verifiedAt : null),
                 lifecycleStatus: PropertyLifecycle.PUBLISHED,

@@ -21,6 +21,8 @@ export interface PublicPropertyDTO {
   foodPolicy: string | null;
   electricityCharges?: number | null;
   electricityType?: string | null;
+  electricityDisplay?: string | null;
+  electricityDetails?: Record<string, unknown> | null;
   otherCharges?: number | null;
   availableRooms?: number | null;
   furnishedStatus?: string | null;
@@ -155,7 +157,13 @@ function normalizePublicListingTitle(title?: string | null): string {
 }
 
 export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicPropertyDTO {
-  const depositNum = prop.depositAmount ? Number(prop.depositAmount) : 0;
+  const rawDeposit = prop.depositAmount ? Number(prop.depositAmount) : 0;
+  const depositNum =
+    rawDeposit > 0
+      ? rawDeposit
+      : prop.depositPolicy === "ONE_MONTH_RENT" && prop.rentMin > 0
+      ? prop.rentMin
+      : 0;
   const singleRent = prop.singleRoomRent ? Number(prop.singleRoomRent) : null;
   const doubleRent = prop.doubleRoomRent ? Number(prop.doubleRoomRent) : null;
   const tripleRent = prop.tripleRoomRent ? Number(prop.tripleRoomRent) : null;
@@ -191,6 +199,22 @@ export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicProperty
     foodPolicy: prop.foodPolicy,
     electricityCharges: electricityChargesNum,
     electricityType: prop.electricityType || null,
+    electricityDisplay:
+      prop.electricityDetails &&
+      typeof prop.electricityDetails === "object" &&
+      "displayDescription" in prop.electricityDetails &&
+      typeof (prop.electricityDetails as any).displayDescription === "string"
+        ? (prop.electricityDetails as any).displayDescription
+        : prop.electricityCharges
+        ? (Number(prop.electricityCharges) > 50
+            ? `₹${Number(prop.electricityCharges).toLocaleString("en-IN")}/mo`
+            : `₹${Number(prop.electricityCharges)}/unit`)
+        : prop.electricityType === "INCLUDED"
+        ? "Included in rent"
+        : prop.electricityType === "BY_METER"
+        ? "As per meter"
+        : "Electricity charges not specified",
+    electricityDetails: (prop.electricityDetails as Record<string, unknown>) ?? null,
     otherCharges: otherChargesNum,
     availableRooms: prop.availableRooms ?? (prop.rooms ? prop.rooms.reduce((acc, r) => acc + r.availableUnits, 0) : 1),
     furnishedStatus: prop.furnishedStatus || null,
