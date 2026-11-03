@@ -179,6 +179,18 @@ export async function bookStudentVisit(
       return created;
     }, { timeout: 15000, maxWait: 10000 });
 
+    // Sync studentPhone to user profile if user has no phone saved
+    if (!user.phone && data.studentPhone) {
+      prisma.user
+        .update({
+          where: { id: user.id },
+          data: { phone: data.studentPhone },
+        })
+        .catch(() => {
+          // Ignore unique phone conflicts if another account registered this number
+        });
+    }
+
     console.log(`\n📅 [Visit Booking Confirmed] Code: ${visit.bookingCode}`);
     console.log(`👤 Student: ${data.studentName} (${data.studentPhone})`);
     console.log(`🏠 Property: ${property.publicName} [${property.propertyCode}]`);
