@@ -27,7 +27,7 @@ export interface PublicPropertyDTO {
   availableRooms?: number | null;
   furnishedStatus?: string | null;
   distanceMin: number;
-  distanceText: string;
+  distanceText: string | null;
   description: string;
   rules: string[];
   houseRules: string[];
@@ -175,7 +175,7 @@ export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicProperty
   const verifiedMinMinutes = prop.collegeDistances?.length
     ? Math.min(...prop.collegeDistances.map((cd) => cd.distanceMinutes).filter((m) => m > 0))
     : 0;
-  const publicDistanceText = verifiedDistanceText || "College distances coming soon";
+  const publicDistanceText = verifiedDistanceText || null;
   const publicDistanceMin = Number.isFinite(verifiedMinMinutes) && verifiedMinMinutes > 0 ? verifiedMinMinutes : 0;
 
   return {
