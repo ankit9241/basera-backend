@@ -178,6 +178,19 @@ export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicProperty
   const publicDistanceText = verifiedDistanceText || null;
   const publicDistanceMin = Number.isFinite(verifiedMinMinutes) && verifiedMinMinutes > 0 ? verifiedMinMinutes : 0;
 
+  // Genuine physical verification requires an authorized coordinator/admin on-site audit
+  // evidenced by active VERIFIED status, an assigned coordinator auditor ID (verifiedById),
+  // AND a completed physical audit checklist (verificationChecklist).
+  // Neither an auditor ID alone nor an imported checklist alone can establish verified status.
+  const hasAuditedVerification = Boolean(
+    prop.isVerified &&
+    prop.verificationStatus === "VERIFIED" &&
+    prop.verifiedById &&
+    prop.verificationChecklist &&
+    typeof prop.verificationChecklist === "object" &&
+    Object.keys(prop.verificationChecklist).length > 0
+  );
+
   return {
     id: prop.id,
     propertyCode: prop.propertyCode,
@@ -226,8 +239,8 @@ export function toPublicPropertyDTO(prop: PropertyWithRelations): PublicProperty
     securityDetails: prop.securityDetails,
     amenities: prop.amenities,
     isFeatured: prop.isFeatured,
-    isVerified: prop.isVerified,
-    verifiedAt: prop.verifiedAt,
+    isVerified: hasAuditedVerification,
+    verifiedAt: hasAuditedVerification ? prop.verifiedAt : null,
     availabilityStatus: prop.availabilityStatus,
     rating: prop.rating,
     reviewCount: prop.reviewCount,
@@ -265,6 +278,7 @@ export function toAdminPropertyDTO(prop: PropertyWithRelations): AdminPropertyDT
   const publicDTO = toPublicPropertyDTO(prop);
   return {
     ...publicDTO,
+    isVerified: Boolean(prop.isVerified),
     internalPropertyName: prop.internalPropertyName,
     exactAddress: prop.exactAddress,
     latitude: prop.latitude,

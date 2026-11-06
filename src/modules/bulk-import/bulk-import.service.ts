@@ -222,16 +222,15 @@ function normalizeAvailabilityStatus(val: unknown): { value: AvailabilityStatus;
   };
 }
 
-function normalizeVerificationStatus(val: unknown): { value: VerificationStatus; isExplicit: boolean; error?: string } {
+export function normalizeVerificationStatus(val: unknown): { value: VerificationStatus; isExplicit: boolean; error?: string } {
   if (val === undefined || val === null || String(val).trim() === "") {
     return { value: VerificationStatus.PENDING, isExplicit: false };
   }
   const s = String(val).trim().toUpperCase();
 
-  if (s.includes("VERIF") || s.includes("APPROV")) {
-    return { value: VerificationStatus.VERIFIED, isExplicit: true };
-  }
-  if (s.includes("REVIEW") || s.includes("IN_REVIEW")) {
+  // Physical verification requires authorized on-site audit workflow with checklist.
+  // Imported CSV labels cannot establish VERIFIED status; imported claims map to IN_REVIEW or PENDING.
+  if (s.includes("VERIF") || s.includes("APPROV") || s.includes("REVIEW") || s.includes("IN_REVIEW")) {
     return { value: VerificationStatus.IN_REVIEW, isExplicit: true };
   }
   if (s.includes("REJECT") || s.includes("DECLIN")) {
@@ -1057,8 +1056,6 @@ export async function processBulkPropertyRows(
               continue;
             }
 
-            const isVerifiedBool = item.verificationStatus === VerificationStatus.VERIFIED;
-
             if (action === "NEW") {
               const cleanCode = code.replace(/[^0-9a-zA-Z]/g, "-").toLowerCase().replace(/^-+|-+$/g, "");
               const cleanArea = item.area.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -1143,10 +1140,10 @@ export async function processBulkPropertyRows(
                 ownerType: item.ownerType,
                 photoDriveLink: item.photoDriveLink,
                 availabilityStatus: item.availabilityStatus,
-                verificationStatus: item.verificationStatus,
+                verificationStatus: item.verificationStatus === VerificationStatus.REJECTED ? VerificationStatus.REJECTED : VerificationStatus.PENDING,
                 verificationNotes: item.verificationNotes,
-                isVerified: isVerifiedBool,
-                verifiedAt: isVerifiedBool ? new Date() : null,
+                isVerified: false,
+                verifiedAt: null,
                 lifecycleStatus: PropertyLifecycle.PUBLISHED,
                 exactAddress: item.exactAddress,
                 distanceMin: 0,
@@ -1158,12 +1155,23 @@ export async function processBulkPropertyRows(
               await tx.property.create({ data: propertyData });
               importedCodes.push(code);
             } else if (action === "UPDATE" && existing) {
-              const isVerifiedBool = item.isExplicitVerification
-                ? item.verificationStatus === VerificationStatus.VERIFIED
-                : existing.isVerified;
-              const finalVerificationStatus = item.isExplicitVerification
-                ? item.verificationStatus
-                : existing.verificationStatus;
+              // Physical verification requires an authorized coordinator/admin on-site audit.
+              // Bulk import never elevates an unverified property to VERIFIED.
+              // Existing verification is preserved ONLY if backed by legitimate inspector audit records (both auditor ID AND checklist).
+              const hasLegitimateAudit = Boolean(
+                existing.isVerified &&
+                existing.verificationStatus === VerificationStatus.VERIFIED &&
+                existing.verifiedById &&
+                existing.verificationChecklist &&
+                typeof existing.verificationChecklist === "object" &&
+                Object.keys(existing.verificationChecklist).length > 0
+              );
+
+              const isVerifiedBool = hasLegitimateAudit;
+              const finalVerificationStatus = hasLegitimateAudit
+                ? VerificationStatus.VERIFIED
+                : (existing.verificationStatus === VerificationStatus.REJECTED ? VerificationStatus.REJECTED : VerificationStatus.PENDING);
+              const finalVerifiedAt = hasLegitimateAudit ? existing.verifiedAt : null;
 
               const updateData: Prisma.PropertyUpdateInput = {
                 internalPropertyName: item.internalPropertyName !== undefined ? item.internalPropertyName : existing.internalPropertyName,
@@ -1206,7 +1214,7 @@ export async function processBulkPropertyRows(
                 verificationStatus: finalVerificationStatus,
                 verificationNotes: item.verificationNotes ? item.verificationNotes : existing.verificationNotes,
                 isVerified: isVerifiedBool,
-                verifiedAt: isVerifiedBool && !existing.verifiedAt ? new Date() : (isVerifiedBool ? existing.verifiedAt : null),
+                verifiedAt: finalVerifiedAt,
                 lifecycleStatus: PropertyLifecycle.PUBLISHED,
                 description: item.description,
               };

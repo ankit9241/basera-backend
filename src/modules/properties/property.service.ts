@@ -810,13 +810,39 @@ export async function updateAdminPropertyService(
     updateData.electricityType = elecVal;
   }
   if (data.availabilityStatus !== undefined) updateData.availabilityStatus = data.availabilityStatus;
-  if (data.verificationStatus !== undefined) updateData.verificationStatus = data.verificationStatus;
+  if (data.verificationStatus !== undefined) {
+    if (data.verificationStatus === VerificationStatus.VERIFIED) {
+      // Elevating to VERIFIED requires legitimate auditor evidence (both auditor ID AND checklist)
+      const hasAudit = Boolean(
+        existing.verifiedById &&
+        existing.verificationChecklist &&
+        typeof existing.verificationChecklist === "object" &&
+        Object.keys(existing.verificationChecklist).length > 0
+      );
+      if (hasAudit) {
+        updateData.verificationStatus = VerificationStatus.VERIFIED;
+      }
+    } else {
+      updateData.verificationStatus = data.verificationStatus;
+    }
+  }
   if (data.verificationNotes !== undefined) updateData.verificationNotes = data.verificationNotes;
   if (data.lifecycleStatus !== undefined) updateData.lifecycleStatus = data.lifecycleStatus;
   if (data.isVerified !== undefined) {
-    updateData.isVerified = data.isVerified;
-    if (data.isVerified && !existing.verifiedAt) {
-      updateData.verifiedAt = new Date();
+    if (data.isVerified === false) {
+      updateData.isVerified = false;
+      updateData.verifiedAt = null;
+    } else {
+      // Elevating to isVerified: true requires legitimate auditor evidence (both auditor ID AND checklist)
+      const hasAudit = Boolean(
+        existing.verifiedById &&
+        existing.verificationChecklist &&
+        typeof existing.verificationChecklist === "object" &&
+        Object.keys(existing.verificationChecklist).length > 0
+      );
+      if (hasAudit) {
+        updateData.isVerified = true;
+      }
     }
   }
 
